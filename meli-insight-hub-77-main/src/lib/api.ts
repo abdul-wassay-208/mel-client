@@ -98,4 +98,104 @@ export async function apiAcceptInvite(
   });
 }
 
+// ── Projects ────────────────────────────────────────────────────────────────
+
+export interface ApiIndicator {
+  id: number;
+  name: string;
+  description?: string | null;
+  outcomeId: number;
+}
+
+export interface ApiOutcome {
+  id: number;
+  title: string;
+  description?: string | null;
+  objectiveId: number;
+  indicators?: ApiIndicator[];
+}
+
+export interface ApiObjective {
+  id: number;
+  title: string;
+  description?: string | null;
+  projectId: number;
+  outcomes?: ApiOutcome[];
+}
+
+export interface ApiReport {
+  id: number;
+  title: string;
+  status: "DRAFT" | "SUBMITTED" | "PUBLISHED" | "EDIT_REQUESTED" | "UNLOCKED" | "RE_PUBLISHED";
+  periodStart: string;
+  periodEnd?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  submittedAt?: string | null;
+}
+
+export interface ApiProject {
+  id: number;
+  name: string;
+  description?: string | null;
+  category?: string | null;
+  programLead?: string | null;
+  projectSupport?: string | null;
+  generalCategory?: string | null;
+  specificCategory?: string | null;
+  expectedUsers?: number | null;
+  startDate: string;
+  endDate?: string | null;
+  reportingInterval: "MONTHLY" | "QUARTERLY" | "YEARLY";
+  status: "DRAFT" | "ACTIVE" | "COMPLETED" | "ARCHIVED";
+  leadId?: number | null;
+  createdAt: string;
+  updatedAt: string;
+  lead?: ApiUser | null;
+  objectives?: ApiObjective[];
+  reports?: ApiReport[];
+}
+
+export async function apiGetProjects(): Promise<ApiProject[]> {
+  return request<ApiProject[]>("/projects");
+}
+
+export async function apiGetProject(id: number | string): Promise<ApiProject> {
+  return request<ApiProject>(`/projects/${id}`);
+}
+
+export type ApiCreateProjectPayload = {
+  name: string;
+  description?: string;
+  category?: string;
+  programLead?: string;
+  projectSupport?: string;
+  generalCategory?: string;
+  specificCategory?: string;
+  expectedUsers?: number;
+  startDate: string;
+  endDate?: string;
+  reportingInterval: "MONTHLY" | "QUARTERLY" | "YEARLY" | "monthly" | "quarterly" | "yearly";
+  leadId?: number | null;
+  objectives?: Array<{
+    name: string;
+    description?: string;
+    outcomes?: Array<{
+      name: string;
+      description?: string;
+      indicators?: Array<{
+        name: string;
+        description?: string;
+      }>;
+    }>;
+  }>;
+};
+
+export async function apiCreateProject(payload: ApiCreateProjectPayload): Promise<ApiProject> {
+  return request<ApiProject>("/projects", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 

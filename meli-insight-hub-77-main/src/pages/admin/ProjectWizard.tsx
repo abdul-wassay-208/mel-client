@@ -13,7 +13,7 @@ import { Objective, GENERAL_CATEGORIES, SPECIFIC_CATEGORIES } from '@/types';
 import { Check, ChevronRight, Plus, Trash2, ChevronDown, Target, TrendingUp, Gauge, AlertCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
-import { apiGetUsers, apiCreateUser, ApiUserRecord } from '@/lib/api';
+import { apiGetUsers, apiCreateUser, ApiUserRecord, apiCreateProject } from '@/lib/api';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 const steps = ['Project Details', 'Define Structure', 'Assign Lead', 'Confirm & Save'];
@@ -217,20 +217,66 @@ export default function ProjectWizard() {
     });
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const objectives = buildObjectives();
-    const project = {
-      id: `p${Date.now()}`,
-      name, projectLeadId: selectedLead, programLead, projectSupport,
-      startDate, endDate, generalCategory: generalCat, specificCategory: specificCat,
-      description, reportingInterval: interval, expectedUsers: parseInt(expectedUsers) || 0,
-      objectives, status: 'active' as const,
-      reports: [],
-      createdAt: new Date().toISOString(),
-    };
-    addProject(project);
-    toast({ title: 'Project Created', description: `"${name}" has been created and the Project Lead has been notified.` });
-    navigate('/admin');
+    try {
+      const created = await apiCreateProject({
+        name,
+        description,
+        category: generalCat,
+        programLead,
+        projectSupport,
+        generalCategory: generalCat,
+        specificCategory: specificCat,
+        expectedUsers: parseInt(expectedUsers) || 0,
+        startDate,
+        endDate,
+        reportingInterval: interval,
+        leadId: selectedLead ? Number(selectedLead) : null,
+        objectives: objectives.map((o) => ({
+          name: o.name,
+          description: o.description,
+          outcomes: o.outcomes.map((out) => ({
+            name: out.name,
+            description: out.description,
+            indicators: out.indicators.map((ind) => ({
+              name: ind.name,
+              description: ind.description,
+            })),
+          })),
+        })),
+      });
+
+      // Add to local state immediately; AppContext will also load from backend on refresh.
+      addProject({
+        id: String(created.id),
+        name: created.name,
+        projectLeadId: created.leadId != null ? String(created.leadId) : '',
+        programLead: created.programLead ?? '',
+        projectSupport: created.projectSupport ?? '',
+        startDate,
+        endDate,
+        generalCategory: created.generalCategory ?? generalCat,
+        specificCategory: created.specificCategory ?? specificCat,
+        description: created.description ?? description,
+        reportingInterval: created.reportingInterval === 'MONTHLY' ? 'monthly' : 'quarterly',
+        expectedUsers: created.expectedUsers ?? (parseInt(expectedUsers) || 0),
+        objectives,
+        status: 'active',
+        reports: [],
+        createdAt: created.createdAt,
+      });
+
+      toast({ title: 'Project Created', description: `"${name}" has been saved to the database.` });
+      navigate('/admin');
+    } catch (err: any) {
+      console.error(err);
+      toast({
+        title: 'Failed to create project',
+        description: err?.message || 'Unknown error',
+        variant: 'destructive',
+      });
+    }
   };
 
   // ── Step 2 helpers ──

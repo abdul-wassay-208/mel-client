@@ -1,5 +1,6 @@
-import { createContext, useContext, useState, ReactNode, useCallback } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
 import { Project, EditRequest, AuditLogEntry, Notification, Report, DisaggregatedData } from '@/types';
+import { apiGetProjects, ApiProject } from '@/lib/api';
 
 interface AppContextType {
   projects: Project[];
@@ -29,6 +30,82 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [editRequests, setEditRequests] = useState<EditRequest[]>([]);
   const [auditLog, setAuditLog] = useState<AuditLogEntry[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+
+  const mapApiProjectToProject = useCallback((p: ApiProject): Project => {
+    const reportingInterval = p.reportingInterval === 'MONTHLY' ? 'monthly' : 'quarterly';
+    const status = p.status === 'COMPLETED' ? 'completed' : 'active';
+
+    const objectives = (p.objectives ?? []).map((o) => ({
+      id: String(o.id),
+      name: o.title,
+      description: o.description ?? '',
+      outcomes: (o.outcomes ?? []).map((out) => ({
+        id: String(out.id),
+        name: out.title,
+        description: out.description ?? '',
+        objectiveId: String(o.id),
+        indicators: (out.indicators ?? []).map((ind) => ({
+          id: String(ind.id),
+          name: ind.name,
+          description: ind.description ?? '',
+          outcomeId: String(out.id),
+        })),
+      })),
+    }));
+
+    const reports = (p.reports ?? []).map((r, idx) => {
+      const stateMap: Record<string, Report['state']> = {
+        DRAFT: 'draft',
+        SUBMITTED: 'draft',
+        PUBLISHED: 'published',
+        EDIT_REQUESTED: 'edit_requested',
+        UNLOCKED: 'unlocked',
+        RE_PUBLISHED: 're_published',
+      };
+      return {
+        id: String(r.id),
+        projectId: String(p.id),
+        cycleNumber: idx + 1,
+        periodLabel: r.title,
+        state: stateMap[r.status] ?? 'draft',
+        data: [],
+        createdAt: r.createdAt,
+        lastModifiedAt: r.updatedAt,
+        submittedAt: r.submittedAt ?? undefined,
+      } as Report;
+    });
+
+    return {
+      id: String(p.id),
+      name: p.name,
+      projectLeadId: p.leadId != null ? String(p.leadId) : '',
+      programLead: p.programLead ?? '',
+      projectSupport: p.projectSupport ?? '',
+      startDate: (p.startDate ?? '').slice(0, 10),
+      endDate: (p.endDate ?? '').slice(0, 10),
+      generalCategory: p.generalCategory ?? p.category ?? '',
+      specificCategory: p.specificCategory ?? '',
+      description: p.description ?? '',
+      reportingInterval,
+      expectedUsers: p.expectedUsers ?? 0,
+      objectives,
+      status,
+      reports,
+      createdAt: p.createdAt,
+    };
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const apiProjects = await apiGetProjects();
+        setProjects(apiProjects.map(mapApiProjectToProject));
+      } catch (e) {
+        // If backend is down or user not logged in yet, keep empty.
+        console.error(e);
+      }
+    })();
+  }, [mapApiProjectToProject]);
 
   const addAuditEntry = useCallback((entry: Omit<AuditLogEntry, 'id' | 'timestamp'>) => {
     setAuditLog(prev => [{
