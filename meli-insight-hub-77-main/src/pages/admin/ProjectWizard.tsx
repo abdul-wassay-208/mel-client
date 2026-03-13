@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,8 @@ import { Objective, GENERAL_CATEGORIES, SPECIFIC_CATEGORIES } from '@/types';
 import { Check, ChevronRight, Plus, Trash2, ChevronDown, Target, TrendingUp, Gauge, AlertCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
+import { apiGetUsers, apiCreateUser, ApiUserRecord } from '@/lib/api';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 const steps = ['Project Details', 'Define Structure', 'Assign Lead', 'Confirm & Save'];
 
@@ -100,8 +102,30 @@ export default function ProjectWizard() {
 
   // Step 3 state
   const [selectedLead, setSelectedLead] = useState('');
+  const [projectLeads, setProjectLeads] = useState<{ id: string; name: string; email: string }[]>([]);
+  const [leadDialogOpen, setLeadDialogOpen] = useState(false);
+  const [newLeadName, setNewLeadName] = useState('');
+  const [newLeadEmail, setNewLeadEmail] = useState('');
+  const [creatingLead, setCreatingLead] = useState(false);
 
-  const projectLeads: { id: string; name: string; email: string }[] = [];
+  useEffect(() => {
+    (async () => {
+      try {
+        const users = await apiGetUsers();
+        const leads = users
+          .filter((u: ApiUserRecord) => u.role === 'PROJECT_LEAD' && u.isActive)
+          .map((u) => ({
+            id: String(u.id),
+            name: u.name,
+            email: u.email,
+          }));
+        setProjectLeads(leads);
+      } catch (err: any) {
+        console.error(err);
+        toast({ title: 'Failed to load project leads', description: err?.message || 'Unknown error', variant: 'destructive' });
+      }
+    })();
+  }, [toast]);
 
   const validateStep1 = () => {
     const errors: string[] = [];
@@ -589,9 +613,24 @@ export default function ProjectWizard() {
         {/* Step 3: Assign Lead */}
         {step === 2 && (
           <div className="space-y-5">
-            <div>
-              <h3 className="section-title">Assign Project Lead</h3>
-              <p className="text-[13px] text-muted-foreground mt-1">Select the primary reporting owner for this project</p>
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h3 className="section-title">Assign Project Lead</h3>
+                <p className="text-[13px] text-muted-foreground mt-1">Select the primary reporting owner for this project</p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9 text-[13px]"
+                onClick={() => {
+                  setNewLeadName('');
+                  setNewLeadEmail('');
+                  setLeadDialogOpen(true);
+                }}
+              >
+                <Plus className="h-3.5 w-3.5 mr-1" />
+                Add New Lead
+              </Button>
             </div>
             <div className="space-y-3">
               {projectLeads.map(lead => (
@@ -618,6 +657,84 @@ export default function ProjectWizard() {
               ))}
             </div>
             {!selectedLead && <p className="text-[13px] text-muted-foreground">* Selection is mandatory</p>}
+
+            <Dialog open={leadDialogOpen} onOpenChange={setLeadDialogOpen}>
+              <DialogContent className="sm:max-w-[420px] rounded-2xl">
+                <DialogHeader>
+                  <DialogTitle className="text-lg font-semibold">Add New Project Lead</DialogTitle>
+                  <DialogDescription className="text-[13px]">
+                    Create a new user with the Project Lead role. An invitation email will be sent automatically.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-2">
+                  <div className="space-y-1.5">
+                    <Label className="field-label">Full Name</Label>
+                    <Input
+                      value={newLeadName}
+                      onChange={(e) => setNewLeadName(e.target.value)}
+                      placeholder="e.g. James Wilson"
+                      className="h-10 text-[14px]"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="field-label">Email Address</Label>
+                    <Input
+                      type="email"
+                      value={newLeadEmail}
+                      onChange={(e) => setNewLeadEmail(e.target.value)}
+                      placeholder="lead@example.org"
+                      className="h-10 text-[14px]"
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" className="h-10" onClick={() => setLeadDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    className="h-10"
+                    disabled={creatingLead}
+                    onClick={async () => {
+                      if (!newLeadName.trim() || !newLeadEmail.trim()) {
+                        toast({ title: 'Name and email are required', variant: 'destructive' });
+                        return;
+                      }
+                      setCreatingLead(true);
+                      try {
+                        const created = await apiCreateUser({
+                          name: newLeadName.trim(),
+                          email: newLeadEmail.trim().toLowerCase(),
+                          role: "PROJECT_LEAD",
+                        });
+                        const mapped = {
+                          id: String(created.id),
+                          name: created.name,
+                          email: created.email,
+                        };
+                        setProjectLeads((prev) => [mapped, ...prev]);
+                        setSelectedLead(mapped.id);
+                        toast({
+                          title: 'Project Lead created',
+                          description: `An invitation was sent to ${mapped.email}.`,
+                        });
+                        setLeadDialogOpen(false);
+                      } catch (err: any) {
+                        console.error(err);
+                        toast({
+                          title: 'Failed to create lead',
+                          description: err?.message || 'Unknown error',
+                          variant: 'destructive',
+                        });
+                      } finally {
+                        setCreatingLead(false);
+                      }
+                    }}
+                  >
+                    {creatingLead ? 'Creating...' : 'Create & Invite'}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </div>
         )}
 

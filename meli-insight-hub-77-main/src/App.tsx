@@ -9,6 +9,7 @@ import { MainLayout } from "@/layouts/MainLayout";
 import Login from "./pages/Login";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import ProjectWizard from "./pages/admin/ProjectWizard";
+import ProjectDetails from "./pages/admin/ProjectDetails";
 import EditRequests from "./pages/admin/EditRequests";
 import AuditLog from "./pages/admin/AuditLog";
 import Analytics from "./pages/admin/Analytics";
@@ -68,6 +69,7 @@ const App = () => (
               {/* Admin Routes */}
               <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
               <Route path="/admin/projects/new" element={<AdminRoute><ProjectWizard /></AdminRoute>} />
+              <Route path="/admin/projects/:projectId" element={<AdminRoute><ProjectDetails /></AdminRoute>} />
               <Route path="/admin/edit-requests" element={<AdminRoute><EditRequests /></AdminRoute>} />
               <Route path="/admin/audit-log" element={<AdminRoute><AuditLog /></AdminRoute>} />
               <Route path="/admin/analytics" element={<AdminRoute><Analytics /></AdminRoute>} />

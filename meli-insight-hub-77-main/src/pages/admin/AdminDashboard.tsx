@@ -55,7 +55,7 @@ export default function AdminDashboard() {
               <div
                 key={project.id}
                 className="px-6 py-4 flex items-center justify-between hover:bg-secondary/30 transition-all duration-150 cursor-pointer group"
-                onClick={() => navigate(project.status === 'completed' ? `/admin/analytics` : `/admin/projects/new`)}
+                onClick={() => navigate(`/admin/projects/${project.id}`)}
               >
                 <div className="min-w-0 flex-1">
                   <p className="text-[15px] font-medium truncate group-hover:text-primary transition-colors">{project.name}</p>
