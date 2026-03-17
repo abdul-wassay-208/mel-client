@@ -469,7 +469,7 @@ export default function ProjectWizard() {
                 <h3 className="section-title">Project Structure</h3>
                 <p className="text-[13px] text-muted-foreground mt-1">Select strategic objectives, then attach outcomes and indicators</p>
               </div>
-              {strategicObjectives.length < 3 && (
+              {!!STRATEGIC_OBJECTIVES_DATA.find(s => !strategicObjectives.some(so => so.name === s.id)) && (
                 <Select onValueChange={(v) => addStrategicObjective(v)}>
                   <SelectTrigger className="h-10 w-[320px]">
                     <SelectValue placeholder="Add Strategic Objective..." />

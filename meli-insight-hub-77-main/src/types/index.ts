@@ -313,13 +313,27 @@ export const DISABILITY_OPTIONS = ['Visual', 'Hearing', 'Mobility', 'Intellectua
 export const RURAL_URBAN_OPTIONS = ['Rural', 'Urban'];
 export const STAKEHOLDER_OPTIONS = ['Academia', 'Civil Society', 'Government', 'Private sector', 'Social Enterprise', 'Technical Community'];
 
-export const GENERAL_CATEGORIES = ['Infrastructure', 'Capacity Building', 'Policy & Regulation', 'Community Development', 'Research'];
+export const GENERAL_CATEGORIES = [
+  'Foundation-Led Projects',
+  'Partner-Led Projects',
+  'Foundation-Sponsored Projects',
+];
+
 export const SPECIFIC_CATEGORIES: Record<string, string[]> = {
-  'Infrastructure': ['Digital Connectivity', 'Network Expansion', 'Last Mile Access'],
-  'Capacity Building': ['Technical Training', 'Leadership Development', 'Institutional Strengthening'],
-  'Policy & Regulation': ['Regulatory Reform', 'Policy Development', 'Standards'],
-  'Community Development': ['Digital Literacy', 'Community Networks', 'Local Content'],
-  'Research': ['Impact Assessment', 'Feasibility Study', 'Baseline Survey'],
+  'Foundation-Led Projects': [
+    'APNIC Foundation-Led Project',
+    'APNIC-Led Project',
+    'JPRS-Led Project',
+    'Keio University-Led Project',
+  ],
+  'Partner-Led Projects': [
+    'APNIC-Led Project',
+    'JPRS-Led Project',
+    'Keio University-Led Project',
+  ],
+  'Foundation-Sponsored Projects': [
+    'APNIC Foundation-Sponsored Project',
+  ],
 };
 
 export function emptyDisaggregatedData(indicatorId: string): DisaggregatedData {
