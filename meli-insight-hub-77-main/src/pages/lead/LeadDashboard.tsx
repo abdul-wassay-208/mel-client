@@ -30,6 +30,13 @@ export default function LeadDashboard() {
   const [remarks, setRemarks] = useState('');
   const [currentDateTime, setCurrentDateTime] = useState(new Date());
 
+  const safeFormatDate = (value?: string) => {
+    if (!value) return '—';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '—';
+    return format(d, 'MMM d, yyyy');
+  };
+
   // Update clock every second while modal is open
   useEffect(() => {
     if (!showCreateDialog) return;
@@ -38,10 +45,10 @@ export default function LeadDashboard() {
     return () => clearInterval(interval);
   }, [showCreateDialog]);
 
-  const handleCreateReport = () => {
+  const handleCreateReport = async () => {
     if (!createForProject) return;
     const label = periodLabel.trim() || `Report – ${format(currentDateTime, 'd MMM yyyy')}`;
-    const report = createReportCycle(createForProject, label, user!.id);
+    const report = await createReportCycle(createForProject, label, user!.id);
     if (report) {
       toast({ title: 'New reporting cycle created successfully', description: `"${label}" is now ready for data entry.` });
       setShowCreateDialog(false);
@@ -119,8 +126,8 @@ export default function LeadDashboard() {
                                 <span className="font-medium">{report.periodLabel}</span>
                                 <span className="text-muted-foreground ml-2">(Cycle {report.cycleNumber})</span>
                               </td>
-                              <td className="py-3 pr-4 text-muted-foreground">{format(new Date(report.createdAt), 'MMM d, yyyy')}</td>
-                              <td className="py-3 pr-4 text-muted-foreground">{format(new Date(report.lastModifiedAt), 'MMM d, yyyy')}</td>
+                              <td className="py-3 pr-4 text-muted-foreground">{safeFormatDate(report.createdAt)}</td>
+                              <td className="py-3 pr-4 text-muted-foreground">{safeFormatDate(report.lastModifiedAt)}</td>
                               <td className="py-3 pr-4"><StatusBadge state={report.state} /></td>
                               <td className="py-3 text-right">
                                 <button

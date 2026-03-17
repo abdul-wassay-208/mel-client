@@ -39,6 +39,8 @@ export interface DisaggregatedData {
   operator: string;
   gender: string;
   age: string;
+  city: string;
+  language: string;
   sectorOrgType: string;
   asn: string;
   technology: string;
@@ -46,9 +48,10 @@ export interface DisaggregatedData {
   ruralUrban: string;
   topic: string;
   stakeholderType: string;
-  dialogueType: string;
-  dialogueNumber: number;
+  dialoguesText: string;
   partnerType: string;
+  numberOfUsers: number;
+  notes: string;
 }
 
 export interface Report {
@@ -127,14 +130,188 @@ export interface Notification {
   createdAt: string;
 }
 
-export const ECONOMY_OPTIONS = ['Developed', 'Developing', 'Emerging', 'Least Developed'];
-export const INFRASTRUCTURE_OPTIONS = ['Fixed', 'Mobile', 'Satellite', 'Hybrid'];
-export const GENDER_OPTIONS = ['Male', 'Female', 'Non-binary', 'Prefer not to say'];
-export const AGE_OPTIONS = ['Under 18', '18-24', '25-34', '35-44', '45-54', '55-64', '65+'];
-export const SECTOR_OPTIONS = ['Government', 'Private', 'NGO', 'Academic', 'Multilateral', 'Civil Society'];
-export const DISABILITY_OPTIONS = ['None', 'Visual', 'Hearing', 'Mobility', 'Cognitive', 'Multiple'];
-export const RURAL_URBAN_OPTIONS = ['Rural', 'Urban', 'Peri-urban'];
-export const STAKEHOLDER_OPTIONS = ['Policy Maker', 'Regulator', 'Operator', 'Civil Society', 'Academic', 'Technical Community'];
+export const ECONOMY_OPTIONS = [
+  'Afghanistan',
+  'Bangladesh',
+  'Bhutan',
+  'British Indian Ocean Territory',
+  'India',
+  'Maldives',
+  'Nepal',
+  'Pakistan',
+  'Sri Lanka',
+  'China',
+  'Hong Kong',
+  'Japan',
+  'Korean, South or DPR',
+  'Korea, North or Republic of',
+  'Macao Special Administrative Region of China',
+  'Mongolia',
+  'Taiwan',
+  'Brunie Darussalam',
+  'Cambodia',
+  'Christmas Islands',
+  'Cocos and Keeling Islands',
+  'Indonesia',
+  'Laos',
+  'Malaysia',
+  'Myanmar',
+  'Philippines',
+  'Singapore',
+  'Thailand',
+  'Timor-Leste',
+  'Vietnam',
+  'French Southern Territories',
+  'Australia',
+  'New Zealand',
+  'Norfolk Island',
+  'Fiji',
+  'New Caledonia',
+  'Papua New Guinea',
+  'Solomon Islands',
+  'Vanuatu',
+  'Guam',
+  'Kiribati',
+  'Micronesia, Federated States',
+  'Marshall Islands',
+  'Nauru',
+  'Northern Mariana Islands',
+  'Palau',
+  'American Samoa',
+  'Cook Islands',
+  'French Polynesia',
+  'Niue',
+  'Pitcairn',
+  'Samoa',
+  'Tokelau',
+  'Tonga',
+  'Tuvalu',
+  'Walls and Futuna Islands',
+];
+export const INFRASTRUCTURE_OPTIONS = ['CNs', 'IXPs', 'Root servers', 'Caches', 'DNSSEC', 'RPKI'];
+export const GENDER_OPTIONS = ['Male', 'Female', 'Gender Diverse'];
+export const AGE_OPTIONS = ['18-29', '30-39', '40-49', 'Over 50'];
+export const SECTOR_OPTIONS = [
+  'Internet service provider (ISP)',
+  'Telecommunications/mobile operator',
+  'Infrastructure (telecom/transport/hospital)',
+  'Internet exchange point (IXP)',
+  'Software vendor',
+  'Hardware vendor',
+  'Hosting/data centre',
+  'Domain name registry/registrar',
+  'Government/regulator/municipality',
+  'NREN/research network',
+  'Academic/Educational/research',
+  'Media/entertainment',
+  'Banking/financial',
+  'Enterprise/manufacturing/retail',
+  'Industrial (construction, mining, oil)',
+  'Non-profit/NGO/Internet community',
+];
+export const LANGUAGE_OPTIONS = [
+  'Altai',
+  'Arabic',
+  'Armenian',
+  'Assamese',
+  'Azerbaijani',
+  'Balochi',
+  'Balti',
+  'Bengali',
+  'Bhojpuri',
+  'Bikol',
+  'Bodo',
+  'Burmese',
+  'Buryat',
+  'Cantonese (Yue) Language',
+  'Chhattisgarhi',
+  'Cebuano',
+  'Chin',
+  'Chinese Mandarin',
+  'Dari',
+  'Dhivehi',
+  'Dogri',
+  'Dzongkha',
+  'Filipino(Tagalog)',
+  'Formosan',
+  'Georgian',
+  'Gujarati',
+  'Hakka',
+  'Hebrew',
+  'Hiligaynon',
+  'Hindi',
+  'Hokchiu',
+  'Hokkien',
+  'Ibanag',
+  'Ilocano',
+  'Indonesian',
+  'Japanese',
+  'Javanese',
+  'Kachin',
+  'Kannada',
+  'Kapampangan',
+  'Karakalpak',
+  'Karen',
+  'Kashmiri',
+  'Kayah',
+  'Kazakh',
+  'Khakas',
+  'Khmer',
+  'Konkani',
+  'Korean',
+  'Kurdish',
+  'Kyrgyz',
+  'Lao',
+  'Magahi',
+  'Maguindanao',
+  'Maithili',
+  'Malay',
+  'Malayalam',
+  'Marathi',
+  'Meitei',
+  'Mizo',
+  'Mon',
+  'Mongolian',
+  'Nagpuri',
+  'Nepali',
+  'Odia',
+  'Okinawan',
+  'Ossetian',
+  'Pangasinan',
+  'Pashto',
+  'Persian',
+  'Punjabi',
+  'Rakhine',
+  'Rohingya',
+  'Russian',
+  'Sanskrit',
+  'Santali',
+  'Shan',
+  'Sindhi',
+  'Sinhala',
+  'Tajik',
+  'Tamil',
+  'Tausug',
+  'Telugu',
+  'Tetum',
+  'Thai',
+  'Tibetan',
+  'Tripuri',
+  'Tulu',
+  'Turkish',
+  'Turkmen',
+  'Tuvan',
+  'Urdu',
+  'Uyghur',
+  'Uzbek',
+  'Vietnamese',
+  'Waray',
+  'Yakut',
+  'Zhuang',
+];
+export const DISABILITY_OPTIONS = ['Visual', 'Hearing', 'Mobility', 'Intellectual', 'Psychosocial or neurodiverse'];
+export const RURAL_URBAN_OPTIONS = ['Rural', 'Urban'];
+export const STAKEHOLDER_OPTIONS = ['Academia', 'Civil Society', 'Government', 'Private sector', 'Social Enterprise', 'Technical Community'];
 
 export const GENERAL_CATEGORIES = ['Infrastructure', 'Capacity Building', 'Policy & Regulation', 'Community Development', 'Research'];
 export const SPECIFIC_CATEGORIES: Record<string, string[]> = {
@@ -154,6 +331,8 @@ export function emptyDisaggregatedData(indicatorId: string): DisaggregatedData {
     operator: '',
     gender: '',
     age: '',
+    city: '',
+    language: '',
     sectorOrgType: '',
     asn: '',
     technology: '',
@@ -161,8 +340,9 @@ export function emptyDisaggregatedData(indicatorId: string): DisaggregatedData {
     ruralUrban: '',
     topic: '',
     stakeholderType: '',
-    dialogueType: '',
-    dialogueNumber: 0,
+    dialoguesText: '',
     partnerType: '',
+    numberOfUsers: 0,
+    notes: '',
   };
 }

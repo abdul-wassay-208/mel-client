@@ -132,7 +132,10 @@ export interface ApiReport {
   createdAt: string;
   updatedAt: string;
   submittedAt?: string | null;
+  disaggregatedData?: ApiDisaggregatedRow[];
 }
+
+export type ReportStatusAction = "SUBMIT" | "REQUEST_EDIT" | "APPROVE_EDIT" | "PUBLISH" | "COMPLETE";
 
 export interface ApiProject {
   id: number;
@@ -156,12 +159,36 @@ export interface ApiProject {
   reports?: ApiReport[];
 }
 
+export interface ApiCreateReportPayload {
+  projectId: number;
+  title: string;
+  periodStart: string;
+  periodEnd: string;
+}
+
 export async function apiGetProjects(): Promise<ApiProject[]> {
   return request<ApiProject[]>("/projects");
 }
 
 export async function apiGetProject(id: number | string): Promise<ApiProject> {
   return request<ApiProject>(`/projects/${id}`);
+}
+
+export async function apiCreateReport(payload: ApiCreateReportPayload): Promise<ApiReport> {
+  return request<ApiReport>("/reports", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function apiChangeReportStatus(
+  id: number | string,
+  action: ReportStatusAction
+): Promise<ApiReport> {
+  return request<ApiReport>(`/reports/${id}/status`, {
+    method: "POST",
+    body: JSON.stringify({ action }),
+  });
 }
 
 export type ApiCreateProjectPayload = {
@@ -196,6 +223,78 @@ export async function apiCreateProject(payload: ApiCreateProjectPayload): Promis
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+// ── Disaggregated data ───────────────────────────────────────────────────────
+
+export interface ApiDisaggregatedPayload {
+  reportId: number;
+  indicatorId: number;
+  projectId?: number;
+  Economy?: number | null;
+  Infrastructure?: number | null;
+  Institution?: string | null;
+  Operator?: string | null;
+  Gender?: string | null;
+  Age?: string | null;
+  City?: string | null;
+  Language?: string | null;
+  Sector?: string | null;
+  ASN?: string | null;
+  Technology?: string | null;
+  Disability?: string | null;
+  RuralUrban?: string | null;
+  Topic?: string | null;
+  StakeholderType?: string | null;
+  Dialogues?: number | null;
+  DialoguesText?: string | null;
+  PartnerType?: string | null;
+  NumberOfUsers?: number | null;
+  Notes?: string | null;
+}
+
+export interface ApiDisaggregatedRow {
+  id: number;
+  projectId?: number | null;
+  reportId?: number | null;
+  indicatorId: number;
+  indicator?: { id: number; name: string } | null;
+  Economy?: number | null;
+  Infrastructure?: number | null;
+  Institution?: string | null;
+  Operator?: string | null;
+  Gender?: string | null;
+  Age?: string | null;
+  City?: string | null;
+  Language?: string | null;
+  Sector?: string | null;
+  ASN?: string | null;
+  Technology?: string | null;
+  Disability?: string | null;
+  RuralUrban?: string | null;
+  Topic?: string | null;
+  StakeholderType?: string | null;
+  Dialogues?: number | null;
+  DialoguesText?: string | null;
+  PartnerType?: string | null;
+  NumberOfUsers?: number | null;
+  Notes?: string | null;
+}
+
+export interface ApiReportWithDisagg extends ApiReport {
+  disaggregatedData?: ApiDisaggregatedRow[];
+}
+export async function apiSubmitDisaggregatedData(
+  payload: ApiDisaggregatedPayload
+): Promise<void> {
+  await request<unknown>("/disaggregated-data", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function apiGetReport(id: number | string): Promise<ApiReportWithDisagg> {
+  return request<ApiReportWithDisagg>(`/reports/${id}`);
 }
 
 

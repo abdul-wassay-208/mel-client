@@ -247,6 +247,24 @@ export default function ProjectWizard() {
         })),
       });
 
+      const mappedObjectives: Objective[] = (created.objectives ?? []).map((o: any) => ({
+        id: String(o.id),
+        name: o.title,
+        description: o.description ?? '',
+        outcomes: (o.outcomes ?? []).map((out: any) => ({
+          id: String(out.id),
+          name: out.title,
+          description: out.description ?? '',
+          objectiveId: String(o.id),
+          indicators: (out.indicators ?? []).map((ind: any) => ({
+            id: String(ind.id),
+            name: ind.name,
+            description: ind.description ?? '',
+            outcomeId: String(out.id),
+          })),
+        })),
+      }));
+
       // Add to local state immediately; AppContext will also load from backend on refresh.
       addProject({
         id: String(created.id),
@@ -261,7 +279,8 @@ export default function ProjectWizard() {
         description: created.description ?? description,
         reportingInterval: created.reportingInterval === 'MONTHLY' ? 'monthly' : 'quarterly',
         expectedUsers: created.expectedUsers ?? (parseInt(expectedUsers) || 0),
-        objectives,
+        // IMPORTANT: use DB-created nested structure so indicator IDs are real numeric IDs
+        objectives: mappedObjectives.length > 0 ? mappedObjectives : objectives,
         status: 'active',
         reports: [],
         createdAt: created.createdAt,

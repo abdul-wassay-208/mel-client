@@ -7,6 +7,7 @@ import {
   DISABILITY_OPTIONS,
   RURAL_URBAN_OPTIONS,
   STAKEHOLDER_OPTIONS,
+  LANGUAGE_OPTIONS,
 } from '@/types';
 
 export type FieldType = 'dropdown' | 'text' | 'number';
@@ -25,21 +26,27 @@ export interface IndicatorConfig {
   fields: IndicatorFieldConfig[];
 }
 
+const NOTES_FIELD: IndicatorFieldConfig = {
+  key: 'notes',
+  label: 'Notes',
+  type: 'text' as const,
+  required: false,
+};
+
 const PARTNER_TYPE_OPTIONS = ['ISP', 'Government Agency', 'NGO', 'University', 'Community Organization', 'Private Sector', 'Multilateral'];
-const DIALOGUE_TYPE_OPTIONS = ['Workshop', 'Forum', 'Roundtable', 'Conference', 'Community Meeting', 'Seminar', 'Training', 'Webinar'];
 const TECHNOLOGY_OPTIONS = ['4G LTE', '5G', 'Fiber', 'WiFi Mesh', 'Satellite', 'DSL', 'Cable', 'Fixed Wireless'];
 const TYPE_OPTIONS = ['Publication', 'Report', 'Policy Brief', 'Technical Standard', 'Toolkit', 'Guide'];
-const LANGUAGE_OPTIONS = ['English', 'French', 'Spanish', 'Arabic', 'Chinese', 'Portuguese', 'Russian', 'Other'];
 const ORG_TYPE_OPTIONS = ['Government', 'Private', 'NGO', 'Academic', 'Multilateral', 'Civil Society'];
 const TOPIC_OPTIONS = ['Digital Inclusion', 'Cybersecurity', 'Data Governance', 'AI Policy', 'Spectrum Management', 'Universal Access', 'Digital Rights'];
 
-export const INDICATOR_CONFIGS: IndicatorConfig[] = [
+const BASE_INDICATOR_CONFIGS: IndicatorConfig[] = [
   {
     code: '1.1.1',
     title: 'Indicator 1.1.1',
     fields: [
       { key: 'economy', label: 'Economy', type: 'dropdown', required: true, options: ECONOMY_OPTIONS },
       { key: 'infrastructure', label: 'Infrastructure Type', type: 'dropdown', required: true, options: INFRASTRUCTURE_OPTIONS },
+      { key: 'numberOfUsers', label: 'Number Of Users', type: 'number', required: true },
     ],
   },
   {
@@ -47,6 +54,7 @@ export const INDICATOR_CONFIGS: IndicatorConfig[] = [
     title: 'Indicator 1.1.2',
     fields: [
       { key: 'economy', label: 'Economy', type: 'dropdown', required: true, options: ECONOMY_OPTIONS },
+      { key: 'numberOfUsers', label: 'Number Of Users', type: 'number', required: true },
     ],
   },
   {
@@ -56,8 +64,7 @@ export const INDICATOR_CONFIGS: IndicatorConfig[] = [
       { key: 'economy', label: 'Economy', type: 'dropdown', required: true, options: ECONOMY_OPTIONS },
       { key: 'institution', label: 'Institution', type: 'text', required: true },
       { key: 'operator', label: 'Operator', type: 'text', required: true },
-      { key: 'gender', label: 'Gender', type: 'dropdown', required: true, options: GENDER_OPTIONS },
-      { key: 'age', label: 'Age', type: 'dropdown', required: true, options: AGE_OPTIONS },
+      { key: 'numberOfUsers', label: 'Number Of Users', type: 'number', required: true },
     ],
   },
   {
@@ -65,9 +72,10 @@ export const INDICATOR_CONFIGS: IndicatorConfig[] = [
     title: 'Indicator 1.2.1',
     fields: [
       { key: 'gender', label: 'Gender', type: 'dropdown', required: true, options: GENDER_OPTIONS },
-      { key: 'sectorOrgType', label: 'Sector', type: 'dropdown', required: true, options: SECTOR_OPTIONS },
+      { key: 'age', label: 'Age', type: 'dropdown', required: true, options: AGE_OPTIONS },
       { key: 'economy', label: 'Economy', type: 'dropdown', required: true, options: ECONOMY_OPTIONS },
-      { key: 'asn', label: 'ASN', type: 'text', required: true },
+      { key: 'city', label: 'City', type: 'text', required: true },
+      { key: 'numberOfUsers', label: 'Number Of Users', type: 'number', required: true },
     ],
   },
   {
@@ -76,25 +84,48 @@ export const INDICATOR_CONFIGS: IndicatorConfig[] = [
     fields: [
       { key: 'gender', label: 'Gender', type: 'dropdown', required: true, options: GENDER_OPTIONS },
       { key: 'sectorOrgType', label: 'Sector', type: 'dropdown', required: true, options: SECTOR_OPTIONS },
-      { key: 'economy', label: 'Economy', type: 'dropdown', required: true, options: ECONOMY_OPTIONS },
-      { key: 'asn', label: 'ASN', type: 'text', required: true },
+      { key: 'numberOfUsers', label: 'Number Of Users', type: 'number', required: true },
     ],
   },
   {
     code: '1.2.3',
     title: 'Indicator 1.2.3',
     fields: [
-      { key: 'dialogueType', label: 'Type', type: 'dropdown', required: true, options: TYPE_OPTIONS },
-      { key: 'topic', label: 'Language', type: 'dropdown', required: true, options: LANGUAGE_OPTIONS },
+      { key: 'sectorOrgType', label: 'Org type', type: 'dropdown', required: true, options: ORG_TYPE_OPTIONS },
+      { key: 'economy', label: 'Economy', type: 'dropdown', required: true, options: ECONOMY_OPTIONS },
+      { key: 'asn', label: 'ASN', type: 'text', required: true },
+      { key: 'numberOfUsers', label: 'Number Of Users', type: 'number', required: true },
+    ],
+  },
+  {
+    code: '1.3.1',
+    title: 'Indicator 1.3.1',
+    fields: [
+      // "Type" refers to partner type/category of resource
+      { key: 'partnerType', label: 'Type', type: 'dropdown', required: true, options: TYPE_OPTIONS },
+      { key: 'language', label: 'Language', type: 'dropdown', required: true, options: LANGUAGE_OPTIONS },
+      { key: 'numberOfUsers', label: 'Number Of Users', type: 'number', required: true },
+    ],
+  },
+  {
+    code: '1.3.2',
+    title: 'Indicator 1.3.2',
+    fields: [
+      { key: 'gender', label: 'Gender', type: 'dropdown', required: true, options: GENDER_OPTIONS },
+      { key: 'age', label: 'Age', type: 'dropdown', required: true, options: AGE_OPTIONS },
+      { key: 'economy', label: 'Economy', type: 'dropdown', required: true, options: ECONOMY_OPTIONS },
+      { key: 'numberOfUsers', label: 'Number Of Users', type: 'number', required: true },
     ],
   },
   {
     code: '2.1.1',
     title: 'Indicator 2.1.1',
     fields: [
-      { key: 'technology', label: 'Technology', type: 'dropdown', required: true, options: TECHNOLOGY_OPTIONS },
+      { key: 'partnerType', label: 'Type', type: 'dropdown', required: true, options: TYPE_OPTIONS },
+      { key: 'technology', label: 'Technology', type: 'text', required: true },
       { key: 'sectorOrgType', label: 'Sector', type: 'dropdown', required: true, options: SECTOR_OPTIONS },
       { key: 'economy', label: 'Economy', type: 'dropdown', required: true, options: ECONOMY_OPTIONS },
+      { key: 'numberOfUsers', label: 'Number Of Users', type: 'number', required: true },
     ],
   },
   {
@@ -103,37 +134,43 @@ export const INDICATOR_CONFIGS: IndicatorConfig[] = [
     fields: [
       { key: 'economy', label: 'Economy', type: 'dropdown', required: true, options: ECONOMY_OPTIONS },
       { key: 'sectorOrgType', label: 'Sector', type: 'dropdown', required: true, options: SECTOR_OPTIONS },
+      { key: 'numberOfUsers', label: 'Number Of Users', type: 'number', required: true },
     ],
   },
   {
     code: '2.1.3',
     title: 'Indicator 2.1.3',
     fields: [
+      { key: 'economy', label: 'Economy', type: 'dropdown', required: true, options: ECONOMY_OPTIONS },
       { key: 'gender', label: 'Gender', type: 'dropdown', required: true, options: GENDER_OPTIONS },
       { key: 'disability', label: 'Disability', type: 'dropdown', required: true, options: DISABILITY_OPTIONS },
       { key: 'ruralUrban', label: 'Rural / Urban', type: 'dropdown', required: true, options: RURAL_URBAN_OPTIONS },
+      { key: 'numberOfUsers', label: 'Number Of Users', type: 'number', required: true },
     ],
   },
   {
     code: '2.2.1',
     title: 'Indicator 2.2.1',
     fields: [
-      { key: 'dialogueType', label: 'Type', type: 'dropdown', required: true, options: TYPE_OPTIONS },
+      { key: 'partnerType', label: 'Type', type: 'dropdown', required: true, options: TYPE_OPTIONS },
+      { key: 'numberOfUsers', label: 'Number Of Users', type: 'number', required: true },
     ],
   },
   {
     code: '2.2.2',
     title: 'Indicator 2.2.2',
     fields: [
-      { key: 'sectorOrgType', label: 'Org Type', type: 'dropdown', required: true, options: ORG_TYPE_OPTIONS },
-      { key: 'topic', label: 'Topic', type: 'dropdown', required: true, options: TOPIC_OPTIONS },
+      { key: 'sectorOrgType', label: 'Org type', type: 'dropdown', required: true, options: ORG_TYPE_OPTIONS },
+      { key: 'numberOfUsers', label: 'Number Of Users', type: 'number', required: true },
     ],
   },
   {
     code: '3.1.1',
     title: 'Indicator 3.1.1',
     fields: [
+      { key: 'topic', label: 'Topic', type: 'text', required: true },
       { key: 'economy', label: 'Economy', type: 'dropdown', required: true, options: ECONOMY_OPTIONS },
+      { key: 'numberOfUsers', label: 'Number Of Users', type: 'number', required: true },
     ],
   },
   {
@@ -141,6 +178,7 @@ export const INDICATOR_CONFIGS: IndicatorConfig[] = [
     title: 'Indicator 3.1.2',
     fields: [
       { key: 'economy', label: 'Economy', type: 'dropdown', required: true, options: ECONOMY_OPTIONS },
+      { key: 'numberOfUsers', label: 'Number Of Users', type: 'number', required: true },
     ],
   },
   {
@@ -150,13 +188,15 @@ export const INDICATOR_CONFIGS: IndicatorConfig[] = [
       { key: 'gender', label: 'Gender', type: 'dropdown', required: true, options: GENDER_OPTIONS },
       { key: 'age', label: 'Age', type: 'dropdown', required: true, options: AGE_OPTIONS },
       { key: 'economy', label: 'Economy', type: 'dropdown', required: true, options: ECONOMY_OPTIONS },
-    ],
+      { key: 'numberOfUsers', label: 'Number Of Users', type: 'number', required: true },
+      ],
   },
   {
     code: '3.1.4',
     title: 'Indicator 3.1.4',
     fields: [
       { key: 'stakeholderType', label: 'Stakeholder Type', type: 'dropdown', required: true, options: STAKEHOLDER_OPTIONS },
+      { key: 'numberOfUsers', label: 'Number Of Users', type: 'number', required: true },
     ],
   },
   {
@@ -164,39 +204,48 @@ export const INDICATOR_CONFIGS: IndicatorConfig[] = [
     title: 'Indicator 3.2.1',
     fields: [
       { key: 'economy', label: 'Economy', type: 'dropdown', required: true, options: ECONOMY_OPTIONS },
+      { key: 'numberOfUsers', label: 'Number Of Users', type: 'number', required: true },
     ],
   },
   {
     code: '3.2.2',
     title: 'Indicator 3.2.2',
     fields: [
-      { key: 'dialogueType', label: 'Type of Dialogues', type: 'dropdown', required: true, options: DIALOGUE_TYPE_OPTIONS },
-      { key: 'dialogueNumber', label: 'Number of Dialogues', type: 'number', required: true },
-      { key: 'economy', label: 'Economies Represented', type: 'dropdown', required: true, options: ECONOMY_OPTIONS },
+      { key: 'economy', label: 'Economy', type: 'dropdown', required: true, options: ECONOMY_OPTIONS },
+      { key: 'numberOfUsers', label: 'Number Of Users', type: 'number', required: true },
     ],
   },
   {
     code: '3.3.1',
     title: 'Indicator 3.3.1',
     fields: [
-      { key: 'partnerType', label: 'Partner Type', type: 'dropdown', required: true, options: PARTNER_TYPE_OPTIONS },
+      { key: 'dialoguesText', label: 'Type and number of dialogues', type: 'text', required: true },
+      { key: 'economy', label: 'Economies represented', type: 'dropdown', required: true, options: ECONOMY_OPTIONS },
+      { key: 'numberOfUsers', label: 'Number Of Users', type: 'number', required: true },
     ],
   },
   {
     code: '3.3.2',
     title: 'Indicator 3.3.2',
     fields: [
-      { key: 'partnerType', label: 'Partner Type', type: 'dropdown', required: true, options: PARTNER_TYPE_OPTIONS },
+      { key: 'partnerType', label: 'Partner Type', type: 'text', required: true },
     ],
   },
   {
     code: '3.3.3',
     title: 'Indicator 3.3.3',
     fields: [
-      { key: 'partnerType', label: 'Partner Type', type: 'dropdown', required: true, options: PARTNER_TYPE_OPTIONS },
+      { key: 'partnerType', label: 'Partner Type', type: 'text', required: true },
     ],
   },
 ];
+
+export const INDICATOR_CONFIGS: IndicatorConfig[] = BASE_INDICATOR_CONFIGS.map(
+  (c): IndicatorConfig => ({
+    ...c,
+    fields: c.fields.some((f) => f.key === NOTES_FIELD.key) ? c.fields : [...c.fields, NOTES_FIELD],
+  })
+);
 
 /**
  * Look up indicator config by indicator code or by indicator name.

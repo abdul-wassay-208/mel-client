@@ -1,85 +1,19 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { DisaggregatedData, emptyDisaggregatedData } from '@/types';
-import { getIndicatorConfig, getRequiredFields, IndicatorFieldConfig } from '@/config/indicatorFieldMappings';
+import { DisaggregatedData, emptyDisaggregatedData, ECONOMY_OPTIONS, INFRASTRUCTURE_OPTIONS, LANGUAGE_OPTIONS } from '@/types';
+import { getIndicatorConfig } from '@/config/indicatorFieldMappings';
+import MultiRowIndicatorForm, { IndicatorEntryRow, validateIndicatorRows } from '@/components/MultiRowIndicatorForm';
 import { Target, TrendingUp, Gauge, ChevronDown, ChevronRight, Check, AlertCircle, Send, FileEdit, ArrowLeft, Save } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-
-function DynamicField({
-  field,
-  value,
-  onChange,
-  disabled,
-  hasError,
-}: {
-  field: IndicatorFieldConfig;
-  value: string | number;
-  onChange: (val: string | number) => void;
-  disabled: boolean;
-  hasError: boolean;
-}) {
-  const errorClass = hasError ? 'border-destructive' : '';
-
-  if (field.type === 'dropdown' && field.options) {
-    return (
-      <div className="space-y-2">
-        <Label className={`field-label ${hasError ? 'text-destructive' : ''}`}>
-          {field.label} {field.required && '*'}
-        </Label>
-        <Select value={value as string || ''} onValueChange={v => onChange(v)} disabled={disabled}>
-          <SelectTrigger className={`h-11 text-[14px] ${errorClass}`}>
-            <SelectValue placeholder={`Select ${field.label.toLowerCase()}`} />
-          </SelectTrigger>
-          <SelectContent>
-            {field.options.map(o => (
-              <SelectItem key={o} value={o}>{o}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-    );
-  }
-
-  if (field.type === 'number') {
-    return (
-      <div className="space-y-2">
-        <Label className={`field-label ${hasError ? 'text-destructive' : ''}`}>
-          {field.label} {field.required && '*'}
-        </Label>
-        <Input
-          type="number"
-          value={value || 0}
-          onChange={e => onChange(parseInt(e.target.value) || 0)}
-          className={`h-11 text-[14px] ${errorClass}`}
-          disabled={disabled}
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-2">
-      <Label className={`field-label ${hasError ? 'text-destructive' : ''}`}>
-        {field.label} {field.required && '*'}
-      </Label>
-      <Input
-        value={value as string || ''}
-        onChange={e => onChange(e.target.value)}
-        className={`h-11 text-[14px] ${errorClass}`}
-        disabled={disabled}
-      />
-    </div>
-  );
-}
+import { apiSubmitDisaggregatedData, apiGetReport, ApiDisaggregatedRow } from '@/lib/api';
 
 export default function ReportingInterface() {
   const { projectId, reportId } = useParams<{ projectId: string; reportId: string }>();
@@ -91,14 +25,10 @@ export default function ReportingInterface() {
   const project = getProjectById(projectId!);
   const report = project?.reports.find(r => r.id === reportId);
 
-  const [data, setData] = useState<DisaggregatedData[]>(() => {
-    if (!report || !project) return [];
-    const allIndicators = project.objectives.flatMap(o => o.outcomes.flatMap(ou => ou.indicators));
-    return allIndicators.map(ind => {
-      const existing = report.data.find(d => d.indicatorId === ind.id);
-      return existing || emptyDisaggregatedData(ind.id);
-    });
-  });
+  const allIndicators = project?.objectives.flatMap(o => o.outcomes.flatMap(ou => ou.indicators)) || [];
+
+  // Multi-row state: indicatorId -> IndicatorEntryRow[]
+  const [multiRowData, setMultiRowData] = useState<Record<string, IndicatorEntryRow[]>>({});
 
   const [expandedObj, setExpandedObj] = useState<Set<string>>(new Set(project?.objectives.map(o => o.id) || []));
   const [expandedOut, setExpandedOut] = useState<Set<string>>(new Set(project?.objectives.flatMap(o => o.outcomes.map(ou => ou.id)) || []));
@@ -108,7 +38,7 @@ export default function ReportingInterface() {
   const [editRequestIndicator, setEditRequestIndicator] = useState('');
   const [editRequestFields, setEditRequestFields] = useState<string[]>([]);
   const [editRequestReason, setEditRequestReason] = useState('');
-  const [validationErrors, setValidationErrors] = useState<Record<string, string[]>>({});
+  const [multiRowErrors, setMultiRowErrors] = useState<Record<string, Record<string, string[]>>>({});
 
   if (!project || !report) return <div className="p-6">Project or report not found</div>;
 
@@ -116,44 +46,222 @@ export default function ReportingInterface() {
   const canPublish = report.state === 'draft' || report.state === 'unlocked';
   const canRequestEdit = report.state === 'published' || report.state === 're_published';
 
-  const updateField = (indicatorId: string, field: keyof DisaggregatedData, value: string | number) => {
-    setData(prev => prev.map(d => d.indicatorId === indicatorId ? { ...d, [field]: value } : d));
+  const updateMultiRows = (indicatorId: string, rows: IndicatorEntryRow[]) => {
+    setMultiRowData(prev => ({ ...prev, [indicatorId]: rows }));
   };
 
-  const allIndicators = project.objectives.flatMap(o => o.outcomes.flatMap(ou => ou.indicators));
+  // Hydrate multi-row data from backend disaggregatedData (runs once per project/report)
+  useEffect(() => {
+    if (!project || !report) return;
+    (async () => {
+      try {
+        const apiReport = await apiGetReport(Number(report.id));
+        const grouped: Record<string, IndicatorEntryRow[]> = {};
 
-  const validateAll = (): boolean => {
-    const errors: Record<string, string[]> = {};
-    data.forEach(d => {
-      const indicator = allIndicators.find(i => i.id === d.indicatorId);
-      const config = getIndicatorConfig(d.indicatorId, indicator?.name);
-      if (!config) return; // No config → no validation needed
-      const requiredKeys = getRequiredFields(config);
-      const missing = requiredKeys.filter(key => {
-        const val = (d as any)[key];
-        return val === undefined || val === '' || val === null;
-      });
-      if (missing.length > 0) {
-        errors[d.indicatorId] = missing.map(f => {
-          const fieldCfg = config.fields.find(fc => fc.key === f);
-          return `${fieldCfg?.label || f} is required`;
+        const indicators = project.objectives.flatMap(o => o.outcomes.flatMap(ou => ou.indicators));
+
+        const mapRow = (row: ApiDisaggregatedRow): IndicatorEntryRow | null => {
+          const indIdStr = String(row.indicatorId);
+          const indicator = indicators.find(i => i.id === indIdStr);
+          const config = getIndicatorConfig(indIdStr, row.indicator?.name ?? indicator?.name);
+          if (!config) return null;
+          const entry: IndicatorEntryRow = { id: `db-${row.id}` };
+
+          config.fields.forEach(f => {
+            switch (f.key) {
+              case 'economy':
+                entry.economy = row.Economy ? ECONOMY_OPTIONS[row.Economy - 1] ?? '' : '';
+                break;
+              case 'infrastructure':
+                entry.infrastructure = row.Infrastructure ? INFRASTRUCTURE_OPTIONS[row.Infrastructure - 1] ?? '' : '';
+                break;
+              case 'institution':
+                entry.institution = row.Institution ?? '';
+                break;
+              case 'operator':
+                entry.operator = row.Operator ?? '';
+                break;
+              case 'gender':
+                entry.gender = row.Gender ?? '';
+                break;
+              case 'age':
+                entry.age = row.Age ?? '';
+                break;
+              case 'city':
+                entry.city = row.City ?? '';
+                break;
+              case 'language':
+                entry.language = row.Language ?? '';
+                break;
+              case 'sectorOrgType':
+                entry.sectorOrgType = row.Sector ?? '';
+                break;
+              case 'asn':
+                entry.asn = row.ASN ?? '';
+                break;
+              case 'technology':
+                entry.technology = row.Technology ?? '';
+                break;
+              case 'disability':
+                entry.disability = row.Disability ?? '';
+                break;
+              case 'ruralUrban':
+                entry.ruralUrban = row.RuralUrban ?? '';
+                break;
+              case 'topic':
+                entry.topic = row.Topic ?? '';
+                break;
+              case 'stakeholderType':
+                entry.stakeholderType = row.StakeholderType ?? '';
+                break;
+              case 'dialoguesText':
+                entry.dialoguesText = row.DialoguesText ?? (row.Dialogues != null ? String(row.Dialogues) : '');
+                break;
+              case 'numberOfUsers':
+                entry.numberOfUsers = row.NumberOfUsers ?? 0;
+                break;
+              case 'partnerType':
+                entry.partnerType = row.PartnerType ?? '';
+                break;
+              case 'notes':
+                entry.notes = row.Notes ?? '';
+                break;
+              default:
+                if (f.type === 'number') {
+                  entry[f.key] = 0;
+                } else {
+                  entry[f.key] = '';
+                }
+            }
+          });
+
+          return entry;
+        };
+
+        (apiReport.disaggregatedData ?? []).forEach(row => {
+          const indIdStr = String(row.indicatorId);
+          const entry = mapRow(row);
+          if (!entry) return;
+          grouped[indIdStr] = [...(grouped[indIdStr] || []), entry];
+        });
+
+        setMultiRowData(grouped);
+      } catch (e) {
+        console.error(e);
+      }
+    })();
+  }, [project, report]);
+
+  // Convert multi-row data back to DisaggregatedData[] for saving
+  const buildSaveData = (): DisaggregatedData[] => {
+    const result: DisaggregatedData[] = [];
+    allIndicators.forEach(ind => {
+      const config = getIndicatorConfig(ind.id, ind.name);
+      const rows = multiRowData[ind.id];
+      if (config && rows && rows.length > 0) {
+        rows.forEach(row => {
+          const d = emptyDisaggregatedData(ind.id);
+          config.fields.forEach(f => {
+            (d as any)[f.key] = row[f.key];
+          });
+          result.push(d);
         });
       }
     });
-    setValidationErrors(errors);
-    return Object.keys(errors).length === 0;
+    return result;
   };
 
-  const handlePublish = () => {
+  const validateAll = (): boolean => {
+    const allErrors: Record<string, Record<string, string[]>> = {};
+    let hasError = false;
+    allIndicators.forEach(ind => {
+      const config = getIndicatorConfig(ind.id, ind.name);
+      if (!config) return;
+      const rows = multiRowData[ind.id] || [];
+      if (rows.length === 0) return;
+      const rowErrors = validateIndicatorRows(config, rows);
+      if (Object.keys(rowErrors).length > 0) {
+        allErrors[ind.id] = rowErrors;
+        hasError = true;
+      }
+    });
+    setMultiRowErrors(allErrors);
+    return !hasError;
+  };
+
+  const encodeOption = (value: string, options: string[]): number | undefined => {
+    if (!value) return undefined;
+    const idx = options.indexOf(value);
+    return idx >= 0 ? idx + 1 : undefined;
+  };
+
+  const mapRowToPayload = (indicatorId: string, row: DisaggregatedData): DisaggregatedData => row;
+
+  const toApiPayload = (row: DisaggregatedData): import('@/lib/api').ApiDisaggregatedPayload => {
+    const indicatorIdNum = Number(row.indicatorId);
+    if (!Number.isFinite(indicatorIdNum)) {
+      throw new Error(`Invalid indicatorId "${String(row.indicatorId)}" (project structure not synced to DB IDs yet)`);
+    }
+    const payload: import('@/lib/api').ApiDisaggregatedPayload = {
+      reportId: Number(report.id),
+      indicatorId: indicatorIdNum,
+      projectId: Number(project.id),
+    };
+
+    const econ = encodeOption(row.economy, ECONOMY_OPTIONS);
+    if (econ !== undefined) payload.Economy = econ;
+
+    const infra = encodeOption(row.infrastructure, INFRASTRUCTURE_OPTIONS);
+    if (infra !== undefined) payload.Infrastructure = infra;
+
+    if (row.institution) payload.Institution = row.institution;
+    if (row.operator) payload.Operator = row.operator;
+    if (row.gender) payload.Gender = row.gender;
+    if (row.age) payload.Age = row.age;
+    if (row.city) payload.City = row.city;
+    if (row.language) payload.Language = row.language;
+    if (row.sectorOrgType) payload.Sector = row.sectorOrgType;
+    if (row.asn) payload.ASN = row.asn;
+    if (row.technology) payload.Technology = row.technology;
+    if (row.disability) payload.Disability = row.disability;
+    if (row.ruralUrban) payload.RuralUrban = row.ruralUrban;
+    if (row.topic) payload.Topic = row.topic;
+    if (row.stakeholderType) payload.StakeholderType = row.stakeholderType;
+    if (row.dialoguesText) payload.DialoguesText = row.dialoguesText;
+    if (typeof row.numberOfUsers === 'number' && row.numberOfUsers > 0) payload.NumberOfUsers = row.numberOfUsers;
+    if (row.partnerType) payload.PartnerType = row.partnerType;
+    if (row.notes) payload.Notes = row.notes;
+
+    return payload;
+  };
+
+  const handlePublish = async () => {
     if (!validateAll()) {
       toast({ title: 'Validation Error', description: 'Please complete all required fields.', variant: 'destructive' });
       return;
     }
-    updateReportData(project.id, report.id, data);
+    const saveData = buildSaveData();
+    try {
+      // Persist each disaggregated row to backend
+      await Promise.all(
+        saveData.map(async (d) => {
+          const payload = toApiPayload(mapRowToPayload(d.indicatorId, d));
+          await apiSubmitDisaggregatedData(payload);
+        })
+      );
+    } catch (err: any) {
+      console.error(err);
+      toast({ title: 'Failed to save data to server', description: err?.message || 'Unknown error', variant: 'destructive' });
+      return;
+    }
+
+    // Only update local state after server save succeeds (prevents "data wiped" on failed requests)
+    updateReportData(project.id, report.id, saveData);
+
     if (report.state === 'unlocked') {
-      republishReport(project.id, report.id, user!.id);
+      await republishReport(project.id, report.id, user!.id);
     } else {
-      publishReport(project.id, report.id, user!.id);
+      await publishReport(project.id, report.id, user!.id);
     }
     setShowPublishDialog(false);
     toast({ title: 'Report Published', description: 'Your report has been published successfully.' });
@@ -174,7 +282,8 @@ export default function ReportingInterface() {
   };
 
   const handleSaveDraft = () => {
-    updateReportData(project.id, report.id, data);
+    const saveData = buildSaveData();
+    updateReportData(project.id, report.id, saveData);
     toast({ title: 'Draft Saved', description: 'Your data has been saved.' });
   };
 
@@ -182,18 +291,15 @@ export default function ReportingInterface() {
     setEditRequestFields(prev => prev.includes(field) ? prev.filter(f => f !== field) : [...prev, field]);
   };
 
-  const getFieldsForIndicator = (indicatorId: string, indicatorName: string) => {
-    const config = getIndicatorConfig(indicatorId, indicatorName);
-    return config;
-  };
-
   const getFilledCount = (indicatorId: string, indicatorName: string) => {
-    const config = getFieldsForIndicator(indicatorId, indicatorName);
+    const config = getIndicatorConfig(indicatorId, indicatorName);
     if (!config) return { filled: 0, total: 0 };
-    const indData = data.find(d => d.indicatorId === indicatorId);
-    if (!indData) return { filled: 0, total: config.fields.length };
+    const rows = multiRowData[indicatorId] || [];
+    if (rows.length === 0) return { filled: 0, total: config.fields.length };
+    // Count fields filled in first row as progress
+    const firstRow = rows[0];
     const filled = config.fields.filter(f => {
-      const val = (indData as any)[f.key];
+      const val = firstRow[f.key];
       return val !== undefined && val !== '' && val !== null && val !== 0;
     }).length;
     return { filled, total: config.fields.length };
@@ -259,9 +365,11 @@ export default function ReportingInterface() {
                   <span className="text-[14px] flex-1">{out.name}</span>
                 </div>
                 {expandedOut.has(out.id) && out.indicators.map((ind, ini) => {
-                  const hasErrors = validationErrors[ind.id]?.length > 0;
+                  const indicatorErrors = multiRowErrors[ind.id] || {};
+                  const hasErrors = Object.keys(indicatorErrors).length > 0;
                   const { filled, total } = getFilledCount(ind.id, ind.name);
-                  const config = getFieldsForIndicator(ind.id, ind.name);
+                  const config = getIndicatorConfig(ind.id, ind.name);
+                  const rows = multiRowData[ind.id] || [];
                   return (
                     <div key={ind.id} className="ml-8 border-t border-border">
                       <div
@@ -292,38 +400,17 @@ export default function ReportingInterface() {
                       {activeIndicator === ind.id && (
                         <div className="px-6 py-6 bg-secondary/20 border-t border-border">
                           {config ? (
-                            <>
-                              <p className="text-[14px] font-semibold mb-1">Indicator-Specific Disaggregation</p>
-                              <p className="text-[12px] text-muted-foreground mb-4">
-                                {config.code} — {config.fields.length} field{config.fields.length !== 1 ? 's' : ''} required
-                              </p>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {config.fields.map(field => {
-                                  const indData = data.find(d => d.indicatorId === ind.id);
-                                  const val = indData ? (indData as any)[field.key] : '';
-                                  const fieldHasError = validationErrors[ind.id]?.some(e => e.toLowerCase().includes(field.label.toLowerCase()));
-                                  return (
-                                    <DynamicField
-                                      key={field.key}
-                                      field={field}
-                                      value={val}
-                                      onChange={v => updateField(ind.id, field.key as keyof DisaggregatedData, v)}
-                                      disabled={!canEdit}
-                                      hasError={!!fieldHasError}
-                                    />
-                                  );
-                                })}
-                              </div>
-                            </>
+                            <MultiRowIndicatorForm
+                              config={config}
+                              rows={rows}
+                              onChange={(newRows) => updateMultiRows(ind.id, newRows)}
+                              disabled={!canEdit}
+                              validationErrors={indicatorErrors}
+                            />
                           ) : (
                             <p className="text-[13px] text-muted-foreground italic">
                               No disaggregation configuration found for this indicator. Contact your administrator.
                             </p>
-                          )}
-                          {validationErrors[ind.id] && (
-                            <div className="mt-4 bg-destructive/8 border border-destructive/15 rounded-xl p-4">
-                              {validationErrors[ind.id].map((e, i) => <p key={i} className="text-[13px] text-destructive">{e}</p>)}
-                            </div>
                           )}
                         </div>
                       )}

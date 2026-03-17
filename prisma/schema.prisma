@@ -63,6 +63,11 @@ model Project {
   name              String
   description       String?
   category          String?
+  programLead       String?
+  projectSupport    String?
+  generalCategory   String?
+  specificCategory  String?
+  expectedUsers     Int?
   startDate         DateTime
   endDate           DateTime?
   reportingInterval ReportingInterval
@@ -148,10 +153,12 @@ model DisaggregatedData {
 
   Economy          Int?
   Infrastructure   Int?
-  Institution      Int?
-  Operator         Int?
+  Institution      String?
+  Operator         String?
   Gender           String?
   Age              String?
+  City             String?
+  Language         String?
   Sector           String?
   ASN              String?
   Technology       String?
@@ -160,7 +167,13 @@ model DisaggregatedData {
   Topic            String?
   StakeholderType  String?
   Dialogues        Int?
+  DialoguesText    String?
   PartnerType      String?
+
+  // Total number of users / beneficiaries represented by this row
+  NumberOfUsers    Int?
+
+  Notes            String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

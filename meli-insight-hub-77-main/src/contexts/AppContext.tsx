@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
-import { Project, EditRequest, AuditLogEntry, Notification, Report, DisaggregatedData } from '@/types';
-import { apiGetProjects, ApiProject } from '@/lib/api';
+import { Project, EditRequest, AuditLogEntry, Notification, Report, DisaggregatedData, ECONOMY_OPTIONS, INFRASTRUCTURE_OPTIONS } from '@/types';
+import { apiGetProjects, ApiProject, apiCreateReport, ApiReport, apiChangeReportStatus } from '@/lib/api';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface AppContextType {
   projects: Project[];
@@ -8,10 +9,10 @@ interface AppContextType {
   auditLog: AuditLogEntry[];
   notifications: Notification[];
   addProject: (project: Project) => void;
-  createReportCycle: (projectId: string, periodLabel: string, userId: string) => Report | null;
+  createReportCycle: (projectId: string, periodLabel: string, userId: string) => Promise<Report | null>;
   updateReportData: (projectId: string, reportId: string, data: DisaggregatedData[]) => void;
-  publishReport: (projectId: string, reportId: string, userId: string) => void;
-  republishReport: (projectId: string, reportId: string, userId: string) => void;
+  publishReport: (projectId: string, reportId: string, userId: string) => Promise<void>;
+  republishReport: (projectId: string, reportId: string, userId: string) => Promise<void>;
   requestEdit: (req: Omit<EditRequest, 'id' | 'status' | 'requestedAt'>) => void;
   approveEditRequest: (requestId: string, adminId: string) => void;
   rejectEditRequest: (requestId: string, adminId: string) => void;
@@ -26,6 +27,7 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | null>(null);
 
 export function AppProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [editRequests, setEditRequests] = useState<EditRequest[]>([]);
   const [auditLog, setAuditLog] = useState<AuditLogEntry[]>([]);
@@ -53,7 +55,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       })),
     }));
 
-    const reports = (p.reports ?? []).map((r, idx) => {
+    const decodeOption = (value: number | null | undefined, options: string[]) => {
+      if (value == null) return '';
+      const idx = value - 1;
+      return idx >= 0 && idx < options.length ? options[idx] : '';
+    };
+
+    const reports = (p.reports ?? []).map((r: any, idx) => {
       const stateMap: Record<string, Report['state']> = {
         DRAFT: 'draft',
         SUBMITTED: 'draft',
@@ -62,13 +70,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
         UNLOCKED: 'unlocked',
         RE_PUBLISHED: 're_published',
       };
+
+      const data: DisaggregatedData[] = (r.disaggregatedData ?? []).map((row: any) => ({
+        indicatorId: String(row.indicatorId),
+        economy: decodeOption(row.Economy, ECONOMY_OPTIONS),
+        infrastructure: decodeOption(row.Infrastructure, INFRASTRUCTURE_OPTIONS),
+        institution: row.Institution ?? '',
+        operator: row.Operator ?? '',
+        gender: row.Gender ?? '',
+        age: row.Age ?? '',
+        city: row.City ?? '',
+        language: row.Language ?? '',
+        sectorOrgType: row.Sector ?? '',
+        asn: row.ASN ?? '',
+        technology: row.Technology ?? '',
+        disability: row.Disability ?? '',
+        ruralUrban: row.RuralUrban ?? '',
+        topic: row.Topic ?? '',
+        stakeholderType: row.StakeholderType ?? '',
+        dialoguesText: row.DialoguesText ?? (row.Dialogues != null ? String(row.Dialogues) : ''),
+        partnerType: row.PartnerType ?? '',
+        numberOfUsers: row.NumberOfUsers ?? 0,
+        notes: row.Notes ?? '',
+      }));
+
       return {
         id: String(r.id),
         projectId: String(p.id),
         cycleNumber: idx + 1,
         periodLabel: r.title,
         state: stateMap[r.status] ?? 'draft',
-        data: [],
+        data,
         createdAt: r.createdAt,
         lastModifiedAt: r.updatedAt,
         submittedAt: r.submittedAt ?? undefined,
@@ -96,16 +128,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // When auth changes (login/logout), refresh projects from backend.
+    if (!user) {
+      setProjects([]);
+      return;
+    }
     (async () => {
       try {
         const apiProjects = await apiGetProjects();
         setProjects(apiProjects.map(mapApiProjectToProject));
       } catch (e) {
-        // If backend is down or user not logged in yet, keep empty.
         console.error(e);
       }
     })();
-  }, [mapApiProjectToProject]);
+  }, [user, mapApiProjectToProject]);
 
   const addAuditEntry = useCallback((entry: Omit<AuditLogEntry, 'id' | 'timestamp'>) => {
     setAuditLog(prev => [{
@@ -128,27 +164,58 @@ export function AppProvider({ children }: { children: ReactNode }) {
     addAuditEntry({ userId: '', userName: '', action: 'Created Project', entityType: 'Project', entityId: project.id });
   }, [addAuditEntry, addNotification]);
 
-  const createReportCycle = useCallback((projectId: string, periodLabel: string, userId: string): Report | null => {
-    const project = projects.find(p => p.id === projectId);
-    if (!project || project.status === 'completed') return null;
-    const nextCycle = project.reports.length + 1;
-    const now = new Date().toISOString();
-    const newReport: Report = {
-      id: `r${Date.now()}`,
-      projectId,
-      cycleNumber: nextCycle,
-      periodLabel,
-      state: 'draft',
-      data: [],
-      createdAt: now,
-      lastModifiedAt: now,
-    };
-    setProjects(prev => prev.map(p =>
-      p.id === projectId ? { ...p, reports: [...p.reports, newReport] } : p
-    ));
-    addAuditEntry({ userId, userName: '', action: 'Created Report Cycle', entityType: 'Report', entityId: newReport.id });
-    return newReport;
-  }, [projects, addAuditEntry]);
+  const createReportCycle = useCallback(
+    async (projectId: string, periodLabel: string, userId: string): Promise<Report | null> => {
+      const project = projects.find(p => p.id === projectId);
+      if (!project || project.status === 'completed') return null;
+
+      const nowIso = new Date().toISOString();
+      const payload = {
+        projectId: Number(projectId),
+        title: periodLabel,
+        periodStart: nowIso,
+        periodEnd: nowIso,
+      };
+
+      const apiReport: ApiReport = await apiCreateReport(payload);
+
+      let createdReport: Report | null = null;
+
+      setProjects(prev =>
+        prev.map(p => {
+          if (p.id !== projectId) return p;
+          const nextCycle = p.reports.length + 1;
+          const mapped: Report = {
+            id: String(apiReport.id),
+            projectId,
+            cycleNumber: nextCycle,
+            periodLabel: apiReport.title,
+            state: 'draft',
+            data: [],
+            createdAt: apiReport.createdAt,
+            lastModifiedAt: apiReport.updatedAt,
+            submittedAt: apiReport.submittedAt ?? undefined,
+          };
+          createdReport = mapped;
+          return {
+            ...p,
+            reports: [...p.reports, mapped],
+          };
+        })
+      );
+
+      addAuditEntry({
+        userId,
+        userName: '',
+        action: 'Created Report Cycle',
+        entityType: 'Report',
+        entityId: String(apiReport.id),
+      });
+
+      return createdReport;
+    },
+    [projects, addAuditEntry]
+  );
 
   const updateReportData = useCallback((projectId: string, reportId: string, data: DisaggregatedData[]) => {
     setProjects(prev => prev.map(p =>
@@ -159,25 +226,75 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ));
   }, []);
 
-  const publishReport = useCallback((projectId: string, reportId: string, userId: string) => {
-    setProjects(prev => prev.map(p =>
-      p.id === projectId ? {
-        ...p,
-        reports: p.reports.map(r => r.id === reportId ? { ...r, state: 'published' as const, submittedAt: new Date().toISOString(), lastModifiedAt: new Date().toISOString() } : r),
-      } : p
-    ));
-    addAuditEntry({ userId, userName: '', action: 'Published Report', entityType: 'Report', entityId: reportId });
-  }, [addAuditEntry, addNotification]);
+  const publishReport = useCallback(
+    async (projectId: string, reportId: string, userId: string) => {
+      const apiReport = await apiChangeReportStatus(Number(reportId), 'PUBLISH');
 
-  const republishReport = useCallback((projectId: string, reportId: string, userId: string) => {
-    setProjects(prev => prev.map(p =>
-      p.id === projectId ? {
-        ...p,
-        reports: p.reports.map(r => r.id === reportId ? { ...r, state: 're_published' as const, submittedAt: new Date().toISOString(), lastModifiedAt: new Date().toISOString() } : r),
-      } : p
-    ));
-    addAuditEntry({ userId, userName: '', action: 'Re-Published Report', entityType: 'Report', entityId: reportId });
-  }, [addAuditEntry]);
+      setProjects(prev =>
+        prev.map(p =>
+          p.id === projectId
+            ? {
+                ...p,
+                reports: p.reports.map(r =>
+                  r.id === reportId
+                    ? {
+                        ...r,
+                        state: apiReport.status === 'PUBLISHED' ? ('published' as const) : r.state,
+                        submittedAt: apiReport.submittedAt ?? r.submittedAt,
+                        lastModifiedAt: apiReport.updatedAt,
+                      }
+                    : r
+                ),
+              }
+            : p
+        )
+      );
+
+      addAuditEntry({
+        userId,
+        userName: '',
+        action: 'Published Report',
+        entityType: 'Report',
+        entityId: reportId,
+      });
+    },
+    [addAuditEntry]
+  );
+
+  const republishReport = useCallback(
+    async (projectId: string, reportId: string, userId: string) => {
+      const apiReport = await apiChangeReportStatus(Number(reportId), 'PUBLISH');
+
+      setProjects(prev =>
+        prev.map(p =>
+          p.id === projectId
+            ? {
+                ...p,
+                reports: p.reports.map(r =>
+                  r.id === reportId
+                    ? {
+                        ...r,
+                        state: apiReport.status === 'PUBLISHED' ? ('re_published' as const) : r.state,
+                        submittedAt: apiReport.submittedAt ?? r.submittedAt,
+                        lastModifiedAt: apiReport.updatedAt,
+                      }
+                    : r
+                ),
+              }
+            : p
+        )
+      );
+
+      addAuditEntry({
+        userId,
+        userName: '',
+        action: 'Re-Published Report',
+        entityType: 'Report',
+        entityId: reportId,
+      });
+    },
+    [addAuditEntry]
+  );
 
   const requestEdit = useCallback((req: Omit<EditRequest, 'id' | 'status' | 'requestedAt'>) => {
     const newReq: EditRequest = { ...req, id: `er${Date.now()}`, status: 'pending', requestedAt: new Date().toISOString() };
