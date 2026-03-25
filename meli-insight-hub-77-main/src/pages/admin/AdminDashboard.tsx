@@ -95,12 +95,16 @@ export default function AdminDashboard() {
               </div>
             ) : (
               allReports
-                .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
                 .slice(0, 6)
                 .map(report => {
                   const project = projects.find(p => p.id === report.projectId);
                   return (
-                    <div key={report.id} className="px-6 py-4">
+                    <div
+                      key={report.id}
+                      className="px-6 py-4 cursor-pointer hover:bg-secondary/30 transition-colors"
+                      onClick={() => navigate(`/admin/reports/${report.id}`)}
+                    >
                       <p className="text-[14px] font-medium">{project?.name}</p>
                       <div className="flex items-center justify-between mt-2">
                         <p className="text-[13px] text-muted-foreground">{report.periodLabel}</p>

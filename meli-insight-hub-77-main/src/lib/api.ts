@@ -129,8 +129,9 @@ export interface ApiReport {
   status: "DRAFT" | "SUBMITTED" | "PUBLISHED" | "EDIT_REQUESTED" | "UNLOCKED" | "RE_PUBLISHED";
   periodStart: string;
   periodEnd?: string | null;
-  createdAt: string;
-  updatedAt: string;
+  // mel-backend Report doesn't expose createdAt/updatedAt; keep optional for compatibility
+  createdAt?: string;
+  updatedAt?: string;
   submittedAt?: string | null;
   disaggregatedData?: ApiDisaggregatedRow[];
 }
@@ -152,6 +153,7 @@ export interface ApiProject {
   reportingInterval: "MONTHLY" | "QUARTERLY" | "YEARLY";
   status: "DRAFT" | "ACTIVE" | "COMPLETED" | "ARCHIVED";
   leadId?: number | null;
+  leads?: Array<{ userId: number; user?: ApiUser | null }> | null;
   createdAt: string;
   updatedAt: string;
   lead?: ApiUser | null;
@@ -203,7 +205,8 @@ export type ApiCreateProjectPayload = {
   startDate: string;
   endDate?: string;
   reportingInterval: "MONTHLY" | "QUARTERLY" | "YEARLY" | "monthly" | "quarterly" | "yearly";
-  leadId?: number | null;
+  leadId?: number | null; // backward compatible
+  leadIds?: number[]; // new multi-lead support
   objectives?: Array<{
     name: string;
     description?: string;
@@ -222,6 +225,16 @@ export async function apiCreateProject(payload: ApiCreateProjectPayload): Promis
   return request<ApiProject>("/projects", {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+export async function apiAssignProjectLeads(
+  projectId: number | string,
+  leadIds: Array<number | string>
+): Promise<ApiProject> {
+  return request<ApiProject>(`/projects/${projectId}/assign-lead`, {
+    method: "POST",
+    body: JSON.stringify({ leadIds: leadIds.map((x) => Number(x)) }),
   });
 }
 

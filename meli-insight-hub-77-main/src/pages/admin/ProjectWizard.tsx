@@ -101,7 +101,7 @@ export default function ProjectWizard() {
   const [step2Errors, setStep2Errors] = useState<string[]>([]);
 
   // Step 3 state
-  const [selectedLead, setSelectedLead] = useState('');
+  const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
   const [projectLeads, setProjectLeads] = useState<{ id: string; name: string; email: string }[]>([]);
   const [leadDialogOpen, setLeadDialogOpen] = useState(false);
   const [newLeadName, setNewLeadName] = useState('');
@@ -183,7 +183,7 @@ export default function ProjectWizard() {
   const handleNext = () => {
     if (step === 0 && !validateStep1()) return;
     if (step === 1 && !validateStep2()) return;
-    if (step === 2 && !selectedLead) return;
+    if (step === 2 && selectedLeads.length === 0) return;
     setStep(s => Math.min(s + 1, 3));
   };
 
@@ -232,7 +232,7 @@ export default function ProjectWizard() {
         startDate,
         endDate,
         reportingInterval: interval,
-        leadId: selectedLead ? Number(selectedLead) : null,
+        leadIds: selectedLeads.map((id) => Number(id)),
         objectives: objectives.map((o) => ({
           name: o.name,
           description: o.description,
@@ -269,7 +269,7 @@ export default function ProjectWizard() {
       addProject({
         id: String(created.id),
         name: created.name,
-        projectLeadId: created.leadId != null ? String(created.leadId) : '',
+        projectLeadId: created.leadId != null ? String(created.leadId) : (selectedLeads[0] ?? ''),
         programLead: created.programLead ?? '',
         projectSupport: created.projectSupport ?? '',
         startDate,
@@ -681,7 +681,7 @@ export default function ProjectWizard() {
             <div className="flex items-center justify-between gap-4">
               <div>
                 <h3 className="section-title">Assign Project Lead</h3>
-                <p className="text-[13px] text-muted-foreground mt-1">Select the primary reporting owner for this project</p>
+                <p className="text-[13px] text-muted-foreground mt-1">Select one or more project leads for this project</p>
               </div>
               <Button
                 variant="outline"
@@ -701,9 +701,13 @@ export default function ProjectWizard() {
               {projectLeads.map(lead => (
                 <div
                   key={lead.id}
-                  onClick={() => setSelectedLead(lead.id)}
+                  onClick={() =>
+                    setSelectedLeads(prev =>
+                      prev.includes(lead.id) ? prev.filter(id => id !== lead.id) : [...prev, lead.id]
+                    )
+                  }
                   className={`p-5 border rounded-xl cursor-pointer transition-all duration-200 ${
-                    selectedLead === lead.id
+                    selectedLeads.includes(lead.id)
                       ? 'border-primary bg-primary/5 ring-1 ring-primary shadow-sm'
                       : 'border-border hover:border-primary/30 hover:shadow-sm'
                   }`}
@@ -716,12 +720,12 @@ export default function ProjectWizard() {
                       <p className="text-[15px] font-medium">{lead.name}</p>
                       <p className="text-[13px] text-muted-foreground">{lead.email}</p>
                     </div>
-                    {selectedLead === lead.id && <Check className="h-5 w-5 text-primary ml-auto" />}
+                    {selectedLeads.includes(lead.id) && <Check className="h-5 w-5 text-primary ml-auto" />}
                   </div>
                 </div>
               ))}
             </div>
-            {!selectedLead && <p className="text-[13px] text-muted-foreground">* Selection is mandatory</p>}
+            {selectedLeads.length === 0 && <p className="text-[13px] text-muted-foreground">* At least one lead is required</p>}
 
             <Dialog open={leadDialogOpen} onOpenChange={setLeadDialogOpen}>
               <DialogContent className="sm:max-w-[420px] rounded-2xl">
@@ -777,7 +781,7 @@ export default function ProjectWizard() {
                           email: created.email,
                         };
                         setProjectLeads((prev) => [mapped, ...prev]);
-                        setSelectedLead(mapped.id);
+                        setSelectedLeads((prev) => (prev.includes(mapped.id) ? prev : [...prev, mapped.id]));
                         toast({
                           title: 'Project Lead created',
                           description: `An invitation was sent to ${mapped.email}.`,
@@ -819,7 +823,17 @@ export default function ProjectWizard() {
                 <div className="border-t border-border" />
                 <div className="flex justify-between py-1"><span className="text-[13px] text-muted-foreground">Expected Users</span><span className="text-[14px]">{expectedUsers}</span></div>
                 <div className="border-t border-border" />
-                <div className="flex justify-between py-1"><span className="text-[13px] text-muted-foreground">Project Lead</span><span className="text-[14px] font-medium">{projectLeads.find(l => l.id === selectedLead)?.name}</span></div>
+                <div className="flex justify-between py-1">
+                  <span className="text-[13px] text-muted-foreground">Project Lead(s)</span>
+                  <span className="text-[14px] font-medium">
+                    {(selectedLeads.length > 0
+                      ? selectedLeads
+                          .map(id => projectLeads.find(l => l.id === id)?.name)
+                          .filter(Boolean)
+                          .join(', ')
+                      : '—')}
+                  </span>
+                </div>
               </div>
               <div className="bg-secondary/40 rounded-xl p-5 space-y-3">
                 <p className="text-[13px] font-semibold">
@@ -847,7 +861,13 @@ export default function ProjectWizard() {
                 <AlertCircle className="h-5 w-5 text-info mt-0.5 shrink-0" />
                 <div>
                   <p className="text-[13px] font-medium">Email Notification</p>
-                  <p className="text-[13px] text-muted-foreground mt-0.5">An assignment email will be sent to {projectLeads.find(l => l.id === selectedLead)?.email}</p>
+                  <p className="text-[13px] text-muted-foreground mt-0.5">
+                    An assignment email will be sent to{' '}
+                    {selectedLeads
+                      .map(id => projectLeads.find(l => l.id === id)?.email)
+                      .filter(Boolean)
+                      .join(', ')}
+                  </p>
                 </div>
               </div>
             </div>

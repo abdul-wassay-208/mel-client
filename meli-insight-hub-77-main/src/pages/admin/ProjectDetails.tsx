@@ -4,36 +4,98 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { ProjectStatusBadge, StatusBadge } from '@/components/StatusBadge';
 import { useEffect, useState } from 'react';
-import { apiGetUsers, ApiUserRecord } from '@/lib/api';
+import { apiGetProject, apiGetUsers, apiAssignProjectLeads, ApiUserRecord } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
 export default function ProjectDetails() {
   const { projectId } = useParams<{ projectId: string }>();
-  const { projects, deleteProject } = useApp();
+  const { projects, deleteProject, refreshProjects } = useApp();
   const { isAdmin } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
 
   const project = projects.find(p => p.id === projectId);
-  const [lead, setLead] = useState<{ name: string; email: string } | null>(null);
+  const [displayLeads, setDisplayLeads] = useState<Array<{ id: string; name: string; email: string }>>([]);
+  const [liveReports, setLiveReports] = useState<any[]>([]);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [showEditLeadsDialog, setShowEditLeadsDialog] = useState(false);
+  const [savingLeads, setSavingLeads] = useState(false);
+  const [allLeads, setAllLeads] = useState<{ id: string; name: string; email: string }[]>([]);
+  const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
 
   useEffect(() => {
     (async () => {
       try {
-        if (!project || !project.projectLeadId) return;
-        const users = await apiGetUsers();
-        const found = users.find((u: ApiUserRecord) => String(u.id) === String(project.projectLeadId));
-        if (found) {
-          setLead({ name: found.name, email: found.email });
+        if (!project) return;
+
+        // Prefer backend project payload (has multi-lead assignments).
+        const apiProject = await apiGetProject(project.id);
+        setLiveReports(apiProject.reports ?? []);
+        const assignedIds = Array.from(
+          new Set([
+            ...(apiProject.leads ?? []).map((a: any) => String(a.userId)),
+            ...(apiProject.leadId != null ? [String(apiProject.leadId)] : []),
+          ])
+        ).filter(Boolean);
+
+        // If backend included user objects, use them directly.
+        const fromEmbedded = (apiProject.leads ?? [])
+          .map((a: any) => a?.user)
+          .filter(Boolean)
+          .map((u: any) => ({ id: String(u.id), name: u.name, email: u.email }));
+
+        if (fromEmbedded.length > 0) {
+          // Ensure stable ordering and de-dupe
+          const byId = new Map(fromEmbedded.map((u: any) => [u.id, u]));
+          setDisplayLeads(assignedIds.map((id) => byId.get(id)).filter(Boolean) as any);
+          return;
         }
+
+        // Fallback: fetch users and map ids to names/emails.
+        const users = await apiGetUsers();
+        const mapped = assignedIds
+          .map((id) => users.find((u: ApiUserRecord) => String(u.id) === id))
+          .filter(Boolean)
+          .map((u: any) => ({ id: String(u.id), name: u.name, email: u.email }));
+        setDisplayLeads(mapped);
       } catch (err) {
         console.error(err);
       }
     })();
   }, [project]);
+
+  useEffect(() => {
+    if (!showEditLeadsDialog || !project) return;
+    (async () => {
+      try {
+        const [users, apiProject] = await Promise.all([
+          apiGetUsers(),
+          apiGetProject(project.id),
+        ]);
+
+        const leads = users
+          .filter((u: ApiUserRecord) => u.role === 'PROJECT_LEAD' && u.isActive)
+          .map((u) => ({
+            id: String(u.id),
+            name: u.name,
+            email: u.email,
+          }));
+        setAllLeads(leads);
+
+        const assigned = Array.from(new Set([
+          ...(apiProject.leads ?? []).map((a: any) => String(a.userId)),
+          ...(apiProject.leadId != null ? [String(apiProject.leadId)] : []),
+        ])).filter(Boolean);
+
+        setSelectedLeadIds(assigned);
+      } catch (err: any) {
+        console.error(err);
+        toast({ title: 'Failed to load leads', description: err?.message || 'Unknown error', variant: 'destructive' });
+      }
+    })();
+  }, [showEditLeadsDialog, project, toast]);
 
   if (!project) {
     return (
@@ -71,13 +133,23 @@ export default function ProjectDetails() {
             {project.startDate} → {project.endDate}
           </p>
           <p className="text-[13px] text-muted-foreground mt-1">
-            <span className="font-medium">Project Lead:</span>{' '}
-            {lead ? `${lead.name} (${lead.email})` : 'Unassigned'}
+            <span className="font-medium">Project Lead(s):</span>{' '}
+            {displayLeads.length > 0
+              ? displayLeads.map(l => `${l.name} (${l.email})`).join(', ')
+              : 'Unassigned'}
           </p>
         </div>
         <div className="flex items-center gap-3">
           <ProjectStatusBadge status={project.status} />
           <Button variant="outline" onClick={() => navigate('/admin')}>Back</Button>
+          {isAdmin && (
+            <Button
+              variant="outline"
+              onClick={() => setShowEditLeadsDialog(true)}
+            >
+              Edit Leads
+            </Button>
+          )}
           {isAdmin && (
             <Button
               variant="destructive"
@@ -140,23 +212,53 @@ export default function ProjectDetails() {
         <div className="space-y-4">
           <div className="card-elevated p-5">
             <h2 className="section-title mb-3">Reporting Cycles</h2>
-            {project.reports.length === 0 ? (
+            {(liveReports.length > 0 ? liveReports : project.reports).length === 0 ? (
               <p className="text-[13px] text-muted-foreground">No report cycles created yet.</p>
             ) : (
               <div className="space-y-3">
-                {project.reports
-                  .sort((a, b) => b.cycleNumber - a.cycleNumber)
-                  .map(report => (
-                    <div key={report.id} className="border border-border rounded-lg p-3 flex items-center justify-between">
+                {(liveReports.length > 0 ? liveReports : project.reports)
+                  .slice()
+                  .sort((a: any, b: any) => {
+                    // mel-backend Report has no createdAt/updatedAt; sort by periodStart then id.
+                    const aDate = new Date(a.periodStart || 0).getTime();
+                    const bDate = new Date(b.periodStart || 0).getTime();
+                    if (aDate !== bDate) return bDate - aDate;
+                    return Number(b.id || 0) - Number(a.id || 0);
+                    return bDate - aDate;
+                  })
+                  .map((report: any, idx: number) => {
+                    const stateMap: Record<string, any> = {
+                      DRAFT: 'draft',
+                      SUBMITTED: 'draft',
+                      PUBLISHED: 'published',
+                      EDIT_REQUESTED: 'edit_requested',
+                      UNLOCKED: 'unlocked',
+                      RE_PUBLISHED: 're_published',
+                      COMPLETED: 'completed',
+                    };
+                    const state = stateMap[report.status] ?? report.state ?? 'draft';
+                    const label = report.title ?? report.periodLabel ?? `Report ${idx + 1}`;
+                    const dateLabel =
+                      report.periodStart
+                        ? `${String(report.periodStart).slice(0, 10)}${report.periodEnd ? ` → ${String(report.periodEnd).slice(0, 10)}` : ''}`
+                        : '';
+                    const cycleNumber = report.cycleNumber ?? idx + 1;
+                    return (
+                    <div
+                      key={report.id}
+                      className="border border-border rounded-lg p-3 flex items-center justify-between cursor-pointer hover:bg-secondary/30 transition-colors"
+                      onClick={() => navigate(`/admin/reports/${report.id}`)}
+                    >
                       <div>
-                        <p className="text-[13px] font-medium">{report.periodLabel}</p>
+                        <p className="text-[13px] font-medium">{label}</p>
                         <p className="text-[12px] text-muted-foreground">
-                          Cycle {report.cycleNumber} · {report.createdAt}
+                          Cycle {cycleNumber}{dateLabel ? ` · ${dateLabel}` : ''}
                         </p>
                       </div>
-                      <StatusBadge state={report.state} />
+                      <StatusBadge state={state} />
                     </div>
-                  ))}
+                    );
+                  })}
               </div>
             )}
           </div>
@@ -185,6 +287,80 @@ export default function ProjectDetails() {
               disabled={deleting}
             >
               {deleting ? 'Deleting…' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showEditLeadsDialog} onOpenChange={setShowEditLeadsDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-lg">Edit Project Leads</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-[13px] text-muted-foreground">
+              Select one or more leads. At least one lead is required.
+            </p>
+            <div className="max-h-[320px] overflow-auto rounded-xl border border-border divide-y divide-border">
+              {allLeads.map((l) => {
+                const selected = selectedLeadIds.includes(l.id);
+                return (
+                  <button
+                    key={l.id}
+                    type="button"
+                    onClick={() =>
+                      setSelectedLeadIds((prev) =>
+                        prev.includes(l.id) ? prev.filter((x) => x !== l.id) : [...prev, l.id]
+                      )
+                    }
+                    className={`w-full text-left px-4 py-3 flex items-center justify-between transition-colors ${
+                      selected ? 'bg-primary/5' : 'hover:bg-secondary/30'
+                    }`}
+                  >
+                    <div>
+                      <p className="text-[14px] font-medium">{l.name}</p>
+                      <p className="text-[12px] text-muted-foreground">{l.email}</p>
+                    </div>
+                    <div className={`text-[12px] font-medium ${selected ? 'text-primary' : 'text-muted-foreground'}`}>
+                      {selected ? 'Selected' : ''}
+                    </div>
+                  </button>
+                );
+              })}
+              {allLeads.length === 0 && (
+                <div className="px-4 py-8 text-center text-[13px] text-muted-foreground">
+                  No active Project Leads found.
+                </div>
+              )}
+            </div>
+            {selectedLeadIds.length === 0 && (
+              <p className="text-[13px] text-destructive">At least one lead is required.</p>
+            )}
+          </div>
+          <DialogFooter className="gap-3">
+            <Button variant="outline" className="h-11" onClick={() => setShowEditLeadsDialog(false)} disabled={savingLeads}>
+              Cancel
+            </Button>
+            <Button
+              className="h-11"
+              onClick={async () => {
+                if (!project) return;
+                if (selectedLeadIds.length === 0) return;
+                setSavingLeads(true);
+                try {
+                  await apiAssignProjectLeads(project.id, selectedLeadIds);
+                  await refreshProjects();
+                  toast({ title: 'Leads updated', description: 'Project leads have been updated.' });
+                  setShowEditLeadsDialog(false);
+                } catch (e: any) {
+                  toast({ title: 'Update failed', description: e?.message || 'Unknown error', variant: 'destructive' });
+                } finally {
+                  setSavingLeads(false);
+                }
+              }}
+              disabled={savingLeads || selectedLeadIds.length === 0}
+            >
+              {savingLeads ? 'Saving…' : 'Save'}
             </Button>
           </DialogFooter>
         </DialogContent>

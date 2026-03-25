@@ -75,7 +75,7 @@ const BASE_INDICATOR_CONFIGS: IndicatorConfig[] = [
       { key: 'age', label: 'Age', type: 'dropdown', required: true, options: AGE_OPTIONS },
       { key: 'economy', label: 'Economy', type: 'dropdown', required: true, options: ECONOMY_OPTIONS },
       { key: 'city', label: 'City', type: 'text', required: true },
-      { key: 'numberOfUsers', label: 'Number Of Users', type: 'number', required: true },
+      { key: 'numberOfUsers', label: 'Number', type: 'number', required: true },
     ],
   },
   {
@@ -84,7 +84,7 @@ const BASE_INDICATOR_CONFIGS: IndicatorConfig[] = [
     fields: [
       { key: 'gender', label: 'Gender', type: 'dropdown', required: true, options: GENDER_OPTIONS },
       { key: 'sectorOrgType', label: 'Sector', type: 'dropdown', required: true, options: SECTOR_OPTIONS },
-      { key: 'numberOfUsers', label: 'Number Of Users', type: 'number', required: true },
+      { key: 'numberOfUsers', label: 'Percentage', type: 'number', required: true },
     ],
   },
   {

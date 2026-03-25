@@ -10,6 +10,7 @@ interface AppContextType {
   notifications: Notification[];
   addProject: (project: Project) => void;
   deleteProject: (projectId: string) => Promise<void>;
+  refreshProjects: () => Promise<void>;
   createReportCycle: (projectId: string, periodLabel: string, userId: string) => Promise<Report | null>;
   updateReportData: (projectId: string, reportId: string, data: DisaggregatedData[]) => void;
   publishReport: (projectId: string, reportId: string, userId: string) => Promise<void>;
@@ -102,8 +103,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         periodLabel: r.title,
         state: stateMap[r.status] ?? 'draft',
         data,
-        createdAt: r.createdAt,
-        lastModifiedAt: r.updatedAt,
+        createdAt: r.createdAt ?? r.periodStart ?? new Date().toISOString(),
+        lastModifiedAt: r.updatedAt ?? r.periodStart ?? new Date().toISOString(),
         submittedAt: r.submittedAt ?? undefined,
       } as Report;
     });
@@ -128,21 +129,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  const refreshProjects = useCallback(async () => {
+    if (!user) {
+      setProjects([]);
+      return;
+    }
+    const apiProjects = await apiGetProjects();
+    setProjects(apiProjects.map(mapApiProjectToProject));
+  }, [user, mapApiProjectToProject]);
+
   useEffect(() => {
     // When auth changes (login/logout), refresh projects from backend.
     if (!user) {
       setProjects([]);
       return;
     }
-    (async () => {
-      try {
-        const apiProjects = await apiGetProjects();
-        setProjects(apiProjects.map(mapApiProjectToProject));
-      } catch (e) {
-        console.error(e);
-      }
-    })();
-  }, [user, mapApiProjectToProject]);
+    refreshProjects().catch((e) => console.error(e));
+  }, [user, refreshProjects]);
 
   const addAuditEntry = useCallback((entry: Omit<AuditLogEntry, 'id' | 'timestamp'>) => {
     setAuditLog(prev => [{
@@ -377,7 +380,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   return (
     <AppContext.Provider value={{
       projects, editRequests, auditLog, notifications,
-      addProject, deleteProject, createReportCycle, updateReportData, publishReport, republishReport,
+      addProject, deleteProject, refreshProjects, createReportCycle, updateReportData, publishReport, republishReport,
       requestEdit, approveEditRequest, rejectEditRequest, completeProject,
       markNotificationRead, retryNotification,
       addAuditEntry, getProjectById, getProjectsForLead,
