@@ -281,10 +281,34 @@ export default function ReportingInterface() {
     toast({ title: 'Edit Request Submitted', description: 'Your request has been sent to the admin for approval.' });
   };
 
-  const handleSaveDraft = () => {
+  const handleSaveDraft = async () => {
     const saveData = buildSaveData();
+
+    // Only persist non-empty rows (backend rejects completely empty rows).
+    const toPersist = saveData.filter((d) => {
+      const { indicatorId, ...rest } = d as any;
+      return Object.values(rest).some((v) => {
+        if (typeof v === 'number') return v > 0;
+        if (typeof v === 'string') return v.trim().length > 0;
+        return v != null;
+      });
+    });
+
+    try {
+      await Promise.all(
+        toPersist.map(async (d) => {
+          const payload = toApiPayload(mapRowToPayload(d.indicatorId, d));
+          await apiSubmitDisaggregatedData(payload);
+        })
+      );
+    } catch (err: any) {
+      console.error(err);
+      toast({ title: 'Failed to save draft to server', description: err?.message || 'Unknown error', variant: 'destructive' });
+      return;
+    }
+
     updateReportData(project.id, report.id, saveData);
-    toast({ title: 'Draft Saved', description: 'Your data has been saved.' });
+    toast({ title: 'Draft Saved', description: 'Your draft has been saved to the database.' });
   };
 
   const toggleField = (field: string) => {

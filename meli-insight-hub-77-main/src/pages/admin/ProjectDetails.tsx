@@ -1,17 +1,24 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { ProjectStatusBadge, StatusBadge } from '@/components/StatusBadge';
 import { useEffect, useState } from 'react';
 import { apiGetUsers, ApiUserRecord } from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
 export default function ProjectDetails() {
   const { projectId } = useParams<{ projectId: string }>();
-  const { projects } = useApp();
+  const { projects, deleteProject } = useApp();
+  const { isAdmin } = useAuth();
+  const { toast } = useToast();
   const navigate = useNavigate();
 
   const project = projects.find(p => p.id === projectId);
   const [lead, setLead] = useState<{ name: string; email: string } | null>(null);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -37,6 +44,21 @@ export default function ProjectDetails() {
     );
   }
 
+  const handleDelete = async () => {
+    if (!project) return;
+    setDeleting(true);
+    try {
+      await deleteProject(project.id);
+      toast({ title: 'Project deleted', description: 'The project has been removed successfully.' });
+      setShowDeleteDialog(false);
+      navigate('/admin');
+    } catch (e: any) {
+      toast({ title: 'Delete failed', description: e?.message || 'Unknown error', variant: 'destructive' });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className="page-container py-8 space-y-6">
       <div className="flex items-start justify-between gap-4">
@@ -56,6 +78,14 @@ export default function ProjectDetails() {
         <div className="flex items-center gap-3">
           <ProjectStatusBadge status={project.status} />
           <Button variant="outline" onClick={() => navigate('/admin')}>Back</Button>
+          {isAdmin && (
+            <Button
+              variant="destructive"
+              onClick={() => setShowDeleteDialog(true)}
+            >
+              Delete
+            </Button>
+          )}
         </div>
       </div>
 
@@ -132,6 +162,33 @@ export default function ProjectDetails() {
           </div>
         </div>
       </div>
+
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-lg">Delete Project</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-[14px] text-muted-foreground">
+              Are you sure you want to delete <span className="font-medium text-foreground">{project.name}</span>?
+              This cannot be undone.
+            </p>
+          </div>
+          <DialogFooter className="gap-3">
+            <Button variant="outline" className="h-11" onClick={() => setShowDeleteDialog(false)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button
+              className="h-11"
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleting}
+            >
+              {deleting ? 'Deleting…' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

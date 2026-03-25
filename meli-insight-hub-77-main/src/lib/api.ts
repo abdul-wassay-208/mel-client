@@ -225,6 +225,36 @@ export async function apiCreateProject(payload: ApiCreateProjectPayload): Promis
   });
 }
 
+export async function apiDeleteProject(id: number | string): Promise<void> {
+  const token = localStorage.getItem("mel_token");
+  const res = await fetch(`${API_BASE_URL}/projects/${id}`, {
+    method: "DELETE",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+
+  if (!res.ok) {
+    let message = "Request failed";
+    try {
+      const body = await res.json();
+      if (body?.message) message = body.message;
+    } catch {
+      // ignore (non-json error bodies)
+    }
+    throw new Error(message);
+  }
+
+  // Backend returns 204 No Content on success.
+  if (res.status === 204) return;
+
+  // If a body exists, still attempt to read it safely.
+  const contentType = res.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    await res.json();
+  }
+}
+
 // ── Disaggregated data ───────────────────────────────────────────────────────
 
 export interface ApiDisaggregatedPayload {

@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
 import { Project, EditRequest, AuditLogEntry, Notification, Report, DisaggregatedData, ECONOMY_OPTIONS, INFRASTRUCTURE_OPTIONS } from '@/types';
-import { apiGetProjects, ApiProject, apiCreateReport, ApiReport, apiChangeReportStatus } from '@/lib/api';
+import { apiGetProjects, ApiProject, apiCreateReport, ApiReport, apiChangeReportStatus, apiDeleteProject } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface AppContextType {
@@ -9,6 +9,7 @@ interface AppContextType {
   auditLog: AuditLogEntry[];
   notifications: Notification[];
   addProject: (project: Project) => void;
+  deleteProject: (projectId: string) => Promise<void>;
   createReportCycle: (projectId: string, periodLabel: string, userId: string) => Promise<Report | null>;
   updateReportData: (projectId: string, reportId: string, data: DisaggregatedData[]) => void;
   publishReport: (projectId: string, reportId: string, userId: string) => Promise<void>;
@@ -353,6 +354,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     addAuditEntry({ userId: '', userName: '', action: 'Completed Project', entityType: 'Project', entityId: projectId });
   }, [addAuditEntry]);
 
+  const deleteProject = useCallback(async (projectId: string) => {
+    await apiDeleteProject(projectId);
+    setProjects(prev => prev.filter(p => p.id !== projectId));
+  }, []);
+
   const markNotificationRead = useCallback((notificationId: string) => {
     setNotifications(prev => prev.map(n =>
       n.id === notificationId ? { ...n, read: true } : n
@@ -371,7 +377,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   return (
     <AppContext.Provider value={{
       projects, editRequests, auditLog, notifications,
-      addProject, createReportCycle, updateReportData, publishReport, republishReport,
+      addProject, deleteProject, createReportCycle, updateReportData, publishReport, republishReport,
       requestEdit, approveEditRequest, rejectEditRequest, completeProject,
       markNotificationRead, retryNotification,
       addAuditEntry, getProjectById, getProjectsForLead,
