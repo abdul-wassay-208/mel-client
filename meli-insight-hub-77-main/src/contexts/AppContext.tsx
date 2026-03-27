@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
-import { Project, EditRequest, AuditLogEntry, Notification, Report, DisaggregatedData, ECONOMY_OPTIONS, INFRASTRUCTURE_OPTIONS } from '@/types';
+import { Project, EditRequest, AuditLogEntry, Report, DisaggregatedData, ECONOMY_OPTIONS, INFRASTRUCTURE_OPTIONS } from '@/types';
 import { apiGetProjects, ApiProject, apiCreateReport, ApiReport, apiChangeReportStatus, apiDeleteProject } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -7,7 +7,6 @@ interface AppContextType {
   projects: Project[];
   editRequests: EditRequest[];
   auditLog: AuditLogEntry[];
-  notifications: Notification[];
   addProject: (project: Project) => void;
   deleteProject: (projectId: string) => Promise<void>;
   refreshProjects: () => Promise<void>;
@@ -19,8 +18,6 @@ interface AppContextType {
   approveEditRequest: (requestId: string, adminId: string) => void;
   rejectEditRequest: (requestId: string, adminId: string) => void;
   completeProject: (projectId: string) => void;
-  markNotificationRead: (notificationId: string) => void;
-  retryNotification: (notificationId: string) => void;
   addAuditEntry: (entry: Omit<AuditLogEntry, 'id' | 'timestamp'>) => void;
   getProjectById: (id: string) => Project | undefined;
   getProjectsForLead: (leadId: string) => Project[];
@@ -33,7 +30,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [editRequests, setEditRequests] = useState<EditRequest[]>([]);
   const [auditLog, setAuditLog] = useState<AuditLogEntry[]>([]);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
 
   const mapApiProjectToProject = useCallback((p: ApiProject): Project => {
     const reportingInterval = p.reportingInterval === 'MONTHLY' ? 'monthly' : 'quarterly';
@@ -155,18 +151,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }, ...prev]);
   }, []);
 
-  const addNotification = useCallback((n: Omit<Notification, 'id' | 'createdAt'>) => {
-    setNotifications(prev => [{
-      ...n,
-      id: `n${Date.now()}`,
-      createdAt: new Date().toISOString(),
-    }, ...prev]);
-  }, []);
-
   const addProject = useCallback((project: Project) => {
     setProjects(prev => [...prev, project]);
     addAuditEntry({ userId: '', userName: '', action: 'Created Project', entityType: 'Project', entityId: project.id });
-  }, [addAuditEntry, addNotification]);
+  }, [addAuditEntry]);
 
   const createReportCycle = useCallback(
     async (projectId: string, periodLabel: string, userId: string): Promise<Report | null> => {
@@ -310,7 +298,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       } : p
     ));
     addAuditEntry({ userId: req.requestedBy, userName: req.requestedByName, action: 'Requested Edit', entityType: 'EditRequest', entityId: newReq.id });
-  }, [addAuditEntry, addNotification]);
+  }, [addAuditEntry]);
 
   const approveEditRequest = useCallback((requestId: string, adminId: string) => {
     setEditRequests(prev => prev.map(r =>
@@ -324,10 +312,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           reports: p.reports.map(r => r.id === req.reportId ? { ...r, state: 'unlocked' as const } : r),
         } : p
       ));
-      addNotification({ type: 'edit_approval', title: 'Edit Request Approved', message: `Your edit request for "${req.projectName}" has been approved. You may now edit the data.`, recipientId: req.requestedBy, read: false, delivered: true, deliveredAt: new Date().toISOString(), retryCount: 0 });
     }
     addAuditEntry({ userId: adminId, userName: '', action: 'Approved Edit Request', entityType: 'EditRequest', entityId: requestId });
-  }, [editRequests, addAuditEntry, addNotification]);
+  }, [editRequests, addAuditEntry]);
 
   const rejectEditRequest = useCallback((requestId: string, adminId: string) => {
     setEditRequests(prev => prev.map(r =>
@@ -341,10 +328,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           reports: p.reports.map(r => r.id === req.reportId ? { ...r, state: 'published' as const } : r),
         } : p
       ));
-      addNotification({ type: 'edit_rejection', title: 'Edit Request Rejected', message: `Your edit request for "${req.projectName}" has been rejected.`, recipientId: req.requestedBy, read: false, delivered: true, deliveredAt: new Date().toISOString(), retryCount: 0 });
     }
     addAuditEntry({ userId: adminId, userName: '', action: 'Rejected Edit Request', entityType: 'EditRequest', entityId: requestId });
-  }, [editRequests, addAuditEntry, addNotification]);
+  }, [editRequests, addAuditEntry]);
 
   const completeProject = useCallback((projectId: string) => {
     setProjects(prev => prev.map(p =>
@@ -362,27 +348,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setProjects(prev => prev.filter(p => p.id !== projectId));
   }, []);
 
-  const markNotificationRead = useCallback((notificationId: string) => {
-    setNotifications(prev => prev.map(n =>
-      n.id === notificationId ? { ...n, read: true } : n
-    ));
-  }, []);
-
-  const retryNotification = useCallback((notificationId: string) => {
-    setNotifications(prev => prev.map(n =>
-      n.id === notificationId ? { ...n, delivered: true, deliveredAt: new Date().toISOString(), failedAt: undefined, retryCount: n.retryCount + 1 } : n
-    ));
-  }, []);
-
   const getProjectById = (id: string) => projects.find(p => p.id === id);
   const getProjectsForLead = (leadId: string) => projects.filter(p => p.projectLeadId === leadId);
 
   return (
     <AppContext.Provider value={{
-      projects, editRequests, auditLog, notifications,
+      projects, editRequests, auditLog,
       addProject, deleteProject, refreshProjects, createReportCycle, updateReportData, publishReport, republishReport,
       requestEdit, approveEditRequest, rejectEditRequest, completeProject,
-      markNotificationRead, retryNotification,
       addAuditEntry, getProjectById, getProjectsForLead,
     }}>
       {children}

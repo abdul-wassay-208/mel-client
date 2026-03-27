@@ -2,10 +2,9 @@ import { ReactNode } from 'react';
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/AppSidebar';
 import { useAuth } from '@/contexts/AuthContext';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Bell, ChevronRight } from 'lucide-react';
-import { useApp } from '@/contexts/AppContext';
-import { useNavigate } from 'react-router-dom';
+import { useNotifications } from '@/contexts/NotificationContext';
 
 const pageTitles: Record<string, { title: string; breadcrumb: string[] }> = {
   '/admin': { title: 'Dashboard', breadcrumb: ['Admin', 'Dashboard'] },
@@ -20,13 +19,12 @@ const pageTitles: Record<string, { title: string; breadcrumb: string[] }> = {
 
 export function MainLayout({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  const { notifications } = useApp();
+  const { unreadCount } = useNotifications();
   const navigate = useNavigate();
   const location = useLocation();
 
   if (!user) return <Navigate to="/login" replace />;
 
-  const unreadCount = notifications.filter(n => n.recipientId === user.id && !n.read).length;
   const pageInfo = pageTitles[location.pathname] || { title: '', breadcrumb: [] };
 
   return (
