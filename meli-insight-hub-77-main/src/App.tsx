@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { AppProvider } from "@/contexts/AppContext";
+import { NotificationProvider } from "@/contexts/NotificationContext";
 import { MainLayout } from "@/layouts/MainLayout";
 import Login from "./pages/Login";
 import AdminDashboard from "./pages/admin/AdminDashboard";
@@ -71,6 +72,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
+          <NotificationProvider>
           <AppProvider>
             <Routes>
               <Route path="/login" element={<Login />} />
@@ -101,6 +103,7 @@ const App = () => (
               <Route path="*" element={<NotFound />} />
             </Routes>
           </AppProvider>
+          </NotificationProvider>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>

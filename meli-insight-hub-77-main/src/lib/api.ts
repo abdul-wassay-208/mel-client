@@ -377,4 +377,33 @@ export async function apiGetReport(id: number | string): Promise<ApiReportWithDi
   return request<ApiReportWithDisagg>(`/reports/${id}`);
 }
 
+// ── Notifications ────────────────────────────────────────────────────────────
+
+export interface BackendNotification {
+  id: number | string;
+  type: string;
+  title: string;
+  message: string;
+  data?: unknown;
+  isRead: boolean;
+  createdAt: string;
+}
+
+export async function apiGetNotifications(unreadOnly = false): Promise<BackendNotification[]> {
+  const qs = unreadOnly ? '?unreadOnly=true' : '';
+  return request<BackendNotification[]>(`/notifications${qs}`);
+}
+
+export async function apiGetUnreadCount(): Promise<{ count: number }> {
+  return request<{ count: number }>('/notifications/unread-count');
+}
+
+export async function apiMarkNotificationRead(id: string | number): Promise<void> {
+  await request<unknown>(`/notifications/${id}/read`, { method: 'PATCH' });
+}
+
+export async function apiMarkAllNotificationsRead(): Promise<void> {
+  await request<unknown>('/notifications/read-all', { method: 'PATCH' });
+}
+
 
