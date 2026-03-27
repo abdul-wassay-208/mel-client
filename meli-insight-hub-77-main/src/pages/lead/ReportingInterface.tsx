@@ -64,7 +64,14 @@ export default function ReportingInterface() {
   }, []);
 
   const getRuntimeIndicatorConfig = (indicatorId: string, indicatorName?: string) => {
-    const live = findMelIndicatorByCode(melLiveObjectives, indicatorId);
+    const codeFromName = (() => {
+      if (!indicatorName) return null;
+      const m = indicatorName.match(/^(\d+(?:\.\d+)+)/);
+      return m ? m[1] : null;
+    })();
+
+    // Prefer matching by indicator code (e.g. "1.2.1") because DB indicator IDs are numeric.
+    const live = findMelIndicatorByCode(melLiveObjectives, codeFromName || indicatorId);
     if (live) return melIndicatorToIndicatorConfig(live);
     return getIndicatorConfig(indicatorId, indicatorName);
   };
