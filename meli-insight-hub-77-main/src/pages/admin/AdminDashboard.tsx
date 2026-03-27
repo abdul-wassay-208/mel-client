@@ -1,4 +1,5 @@
 import { useApp } from '@/contexts/AppContext';
+import { useNotifications } from '@/contexts/NotificationContext';
 import { StatCard } from '@/components/StatCard';
 import { ProjectStatusBadge, StatusBadge } from '@/components/StatusBadge';
 import { FolderOpen, FileText, BarChart3, AlertCircle, ArrowRight, CheckCircle } from 'lucide-react';
@@ -10,7 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { useState } from 'react';
 
 export default function AdminDashboard() {
-  const { projects, editRequests, notifications, completeProject } = useApp();
+  const { projects, editRequests, completeProject } = useApp();
+  const { notifications } = useNotifications();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [completeDialogProject, setCompleteDialogProject] = useState<string | null>(null);
@@ -126,7 +128,7 @@ export default function AdminDashboard() {
         <div className="divide-y divide-border">
           {notifications.slice(0, 5).map(n => (
             <div key={n.id} className="px-6 py-4 flex items-start gap-3.5">
-              <div className={`h-2 w-2 rounded-full mt-2 shrink-0 ${n.read ? 'bg-border' : 'bg-primary'}`} />
+              <div className={`h-2 w-2 rounded-full mt-2 shrink-0 ${n.isRead ? 'bg-border' : 'bg-primary'}`} />
               <div className="min-w-0 flex-1">
                 <p className="text-[14px] font-medium">{n.title}</p>
                 <p className="text-[13px] text-muted-foreground mt-0.5 line-clamp-1">{n.message}</p>
