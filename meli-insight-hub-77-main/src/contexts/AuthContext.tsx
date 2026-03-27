@@ -8,6 +8,7 @@ interface AuthContextType {
   logout: () => void;
   loading: boolean;
   setAuthFromToken: (user: User, token: string) => void;
+  isSuperAdmin: boolean;
   isAdmin: boolean;
   isLead: boolean;
 }
@@ -39,7 +40,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         id: String(res.user.id),
         name: res.user.name,
         email: res.user.email,
-        role: res.user.role === 'ADMIN' ? 'admin' : 'project_lead',
+        role:
+          res.user.role === 'SUPER_ADMIN'
+            ? 'super_admin'
+            : res.user.role === 'ADMIN'
+              ? 'admin'
+              : 'project_lead',
       };
       localStorage.setItem('mel_token', res.token);
       localStorage.setItem('mel_user', JSON.stringify(mappedUser));
@@ -70,7 +76,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout,
       loading,
       setAuthFromToken,
-      isAdmin: user?.role === 'admin',
+      isSuperAdmin: user?.role === 'super_admin',
+      isAdmin: user?.role === 'admin' || user?.role === 'super_admin',
       isLead: user?.role === 'project_lead',
     }}>
       {children}

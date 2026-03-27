@@ -13,8 +13,9 @@ import { Objective, GENERAL_CATEGORIES, SPECIFIC_CATEGORIES } from '@/types';
 import { Check, ChevronRight, Plus, Trash2, ChevronDown, Target, TrendingUp, Gauge, AlertCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
-import { apiGetUsers, apiCreateUser, ApiUserRecord, apiCreateProject } from '@/lib/api';
+import { apiGetUsers, apiCreateUser, ApiUserRecord, apiCreateProject, apiGetConfig, type ProjectCategoriesConfig } from '@/lib/api';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import type { MelConfigPayload } from '@/lib/melConfigLive';
 
 const steps = ['Project Details', 'Define Structure', 'Assign Lead', 'Confirm & Save'];
 
@@ -95,10 +96,12 @@ export default function ProjectWizard() {
   const [interval, setInterval] = useState<'quarterly' | 'monthly'>('quarterly');
   const [expectedUsers, setExpectedUsers] = useState('');
   const [step1Errors, setStep1Errors] = useState<string[]>([]);
+  const [categoryConfig, setCategoryConfig] = useState<ProjectCategoriesConfig | null>(null);
 
   // Step 2 state
   const [strategicObjectives, setStrategicObjectives] = useState<StrategicObjective[]>([]);
   const [step2Errors, setStep2Errors] = useState<string[]>([]);
+  const [melLiveObjectives, setMelLiveObjectives] = useState<MelConfigPayload['objectives'] | null>(null);
 
   // Step 3 state
   const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
@@ -126,6 +129,46 @@ export default function ProjectWizard() {
       }
     })();
   }, [toast]);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await apiGetConfig<ProjectCategoriesConfig>('projectCategories');
+        if (!alive) return;
+        setCategoryConfig(res.value ?? null);
+      } catch {
+        if (!alive) return;
+        setCategoryConfig(null);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await apiGetConfig<MelConfigPayload>('melConfigLive');
+        if (!alive) return;
+        setMelLiveObjectives(res.value?.objectives ?? null);
+      } catch {
+        if (!alive) return;
+        setMelLiveObjectives(null);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  const generalCategoryOptions = categoryConfig?.generalCategories?.length
+    ? categoryConfig.generalCategories
+    : GENERAL_CATEGORIES;
+
+  const specificCategoryOptions = (
+    categoryConfig?.specificCategoriesByGeneral?.[generalCat] ??
+    SPECIFIC_CATEGORIES[generalCat] ??
+    []
+  );
 
   const validateStep1 = () => {
     const errors: string[] = [];
@@ -190,23 +233,26 @@ export default function ProjectWizard() {
   // Convert Step 2 data to Objective[] for saving
   const buildObjectives = (): Objective[] => {
     return strategicObjectives.map(so => {
+      const soDataLive = melLiveObjectives?.find(o => o.id === so.name) || null;
       const soData = STRATEGIC_OBJECTIVES_DATA.find(s => s.id === so.name);
       return {
         id: so.uid,
-        name: soData?.label || so.name,
+        name: soDataLive?.title || soData?.label || so.name,
         description: '',
         outcomes: so.outcomeRows.filter(r => r.outcomeId).map(row => {
+        const outcomeLive = soDataLive?.outcomes.find(oc => oc.id === row.outcomeId) || null;
         const outcomeData = OUTCOMES_DATA.find(o => o.id === row.outcomeId);
         return {
           id: `out_${row.uid}`,
-          name: outcomeData?.label || row.outcomeId,
+          name: outcomeLive?.title || (outcomeData?.label || row.outcomeId),
           description: '',
           objectiveId: so.uid,
           indicators: row.indicatorIds.map(indId => {
+            const indLive = outcomeLive?.indicators.find(i => i.code === indId) || null;
             const indData = INDICATORS_DATA.find(i => i.id === indId);
             return {
               id: `ind_${indId}_${row.uid}`,
-              name: indData?.label || indId,
+              name: indLive ? `${indLive.code} – ${indLive.title}` : (indData?.label || indId),
               description: '',
               outcomeId: `out_${row.uid}`,
             };
@@ -301,7 +347,7 @@ export default function ProjectWizard() {
   // ── Step 2 helpers ──
 
   const addStrategicObjective = (soId: string) => {
-    const soData = STRATEGIC_OBJECTIVES_DATA.find(s => s.id === soId);
+    const soData = melLiveObjectives?.find(s => s.id === soId) || STRATEGIC_OBJECTIVES_DATA.find(s => s.id === soId);
     if (!soData) return;
     // Prevent duplicates
     if (strategicObjectives.some(s => s.name === soData.id)) return;
@@ -362,12 +408,19 @@ export default function ProjectWizard() {
   };
 
   const getOutcomesForSO = (soName: string) => {
+    const liveObj = melLiveObjectives?.find(o => o.id === soName);
+    if (liveObj) return liveObj.outcomes.map(oc => ({ id: oc.id, label: oc.title }));
     const soData = STRATEGIC_OBJECTIVES_DATA.find(s => s.id === soName);
     if (!soData) return OUTCOMES_DATA;
     return OUTCOMES_DATA.filter(o => o.id.startsWith(soData.prefix + '.'));
   };
 
-  const getFilteredIndicators = (outcomeId: string) => {
+  const getFilteredIndicators = (outcomeId: string, soName?: string) => {
+    if (soName) {
+      const liveObj = melLiveObjectives?.find(o => o.id === soName);
+      const liveOutcome = liveObj?.outcomes.find(oc => oc.id === outcomeId);
+      if (liveOutcome) return liveOutcome.indicators.map(ind => ({ id: ind.code, outcomePrefix: outcomeId, label: `${ind.code} – ${ind.title}` }));
+    }
     return INDICATORS_DATA.filter(i => i.outcomePrefix === outcomeId);
   };
 
@@ -424,14 +477,14 @@ export default function ProjectWizard() {
                 <Label className="field-label">General Category *</Label>
                 <Select value={generalCat} onValueChange={v => { setGeneralCat(v); setSpecificCat(''); }}>
                   <SelectTrigger className="h-12 text-[15px]"><SelectValue placeholder="Select category" /></SelectTrigger>
-                  <SelectContent>{GENERAL_CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                  <SelectContent>{generalCategoryOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
                 <Label className="field-label">Specific Category *</Label>
                 <Select value={specificCat} onValueChange={setSpecificCat} disabled={!generalCat}>
                   <SelectTrigger className="h-12 text-[15px]"><SelectValue placeholder="Select specific" /></SelectTrigger>
-                  <SelectContent>{(SPECIFIC_CATEGORIES[generalCat] || []).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                  <SelectContent>{specificCategoryOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
@@ -469,14 +522,16 @@ export default function ProjectWizard() {
                 <h3 className="section-title">Project Structure</h3>
                 <p className="text-[13px] text-muted-foreground mt-1">Select strategic objectives, then attach outcomes and indicators</p>
               </div>
-              {!!STRATEGIC_OBJECTIVES_DATA.find(s => !strategicObjectives.some(so => so.name === s.id)) && (
+              {!!(melLiveObjectives ?? STRATEGIC_OBJECTIVES_DATA).find((s: any) => !strategicObjectives.some(so => so.name === s.id)) && (
                 <Select onValueChange={(v) => addStrategicObjective(v)}>
                   <SelectTrigger className="h-10 w-[320px]">
                     <SelectValue placeholder="Add Strategic Objective..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {STRATEGIC_OBJECTIVES_DATA.filter(s => !strategicObjectives.some(so => so.name === s.id)).map(s => (
-                      <SelectItem key={s.id} value={s.id} className="text-sm py-2">{s.label}</SelectItem>
+                    {(melLiveObjectives ?? STRATEGIC_OBJECTIVES_DATA)
+                      .filter((s: any) => !strategicObjectives.some(so => so.name === s.id))
+                      .map((s: any) => (
+                      <SelectItem key={s.id} value={s.id} className="text-sm py-2">{s.title ?? s.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -502,7 +557,7 @@ export default function ProjectWizard() {
                     {so.expanded ? <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform" /> : <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform" />}
                     <Target className="h-4 w-4 text-primary" />
                     <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono">SO {si + 1}</Badge>
-                    <span className="text-sm font-medium flex-1 truncate">{STRATEGIC_OBJECTIVES_DATA.find(s => s.id === so.name)?.label || so.name}</span>
+                    <span className="text-sm font-medium flex-1 truncate">{melLiveObjectives?.find(o => o.id === so.name)?.title || STRATEGIC_OBJECTIVES_DATA.find(s => s.id === so.name)?.label || so.name}</span>
                     <span className="text-[10px] text-muted-foreground mr-2">
                       {so.outcomeRows.length} outcome{so.outcomeRows.length !== 1 ? 's' : ''} · {so.outcomeRows.reduce((s, r) => s + r.indicatorIds.length, 0)} indicator{so.outcomeRows.reduce((s, r) => s + r.indicatorIds.length, 0) !== 1 ? 's' : ''}
                     </span>
@@ -532,7 +587,7 @@ export default function ProjectWizard() {
                         {so.outcomeRows.map((row, ri) => {
                           const usedOutcomeIds = getUsedOutcomeIds(so, row.uid);
                           const availableOutcomes = getOutcomesForSO(so.name);
-                          const filteredIndicators = row.outcomeId ? getFilteredIndicators(row.outcomeId) : [];
+                          const filteredIndicators = row.outcomeId ? getFilteredIndicators(row.outcomeId, so.name) : [];
 
                           return (
                             <div key={row.uid} className="border border-border rounded-lg bg-background p-3 space-y-3 ml-4">
@@ -553,7 +608,8 @@ export default function ProjectWizard() {
                                       >
                                         <span className="flex-1 text-left leading-snug">
                                           {row.outcomeId
-                                            ? OUTCOMES_DATA.find(o => o.id === row.outcomeId)?.label
+                                            ? (melLiveObjectives?.find(o => o.id === so.name)?.outcomes.find(oc => oc.id === row.outcomeId)?.title
+                                              || OUTCOMES_DATA.find(o => o.id === row.outcomeId)?.label)
                                             : <span className="text-muted-foreground">Search and select an outcome...</span>}
                                         </span>
                                         <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -646,7 +702,7 @@ export default function ProjectWizard() {
                                 {row.indicatorIds.length > 0 && (
                                   <div className="flex flex-wrap gap-1 pt-1">
                                     {row.indicatorIds.map(indId => {
-                                      const ind = INDICATORS_DATA.find(i => i.id === indId);
+                                      const ind = getFilteredIndicators(row.outcomeId, so.name).find(i => i.id === indId) || INDICATORS_DATA.find(i => i.id === indId);
                                       return (
                                         <Badge key={indId} variant="secondary" className="text-[10px] gap-1 pr-1">
                                           <span className="font-mono">{indId}</span>
@@ -841,15 +897,17 @@ export default function ProjectWizard() {
                 </p>
                 {strategicObjectives.map((so, i) => (
                   <div key={so.uid} className="text-[13px] text-muted-foreground space-y-1.5">
-                    <p className="font-medium text-foreground">SO {i + 1}: {STRATEGIC_OBJECTIVES_DATA.find(s => s.id === so.name)?.label || so.name}</p>
+                    <p className="font-medium text-foreground">SO {i + 1}: {melLiveObjectives?.find(o => o.id === so.name)?.title || STRATEGIC_OBJECTIVES_DATA.find(s => s.id === so.name)?.label || so.name}</p>
                     {so.outcomeRows.map(row => {
+                      const outcomeLive = melLiveObjectives?.find(o => o.id === so.name)?.outcomes.find(oc => oc.id === row.outcomeId) || null;
                       const outcome = OUTCOMES_DATA.find(o => o.id === row.outcomeId);
                       return (
                         <div key={row.uid} className="ml-4 space-y-1">
-                          <p>↳ {outcome?.label || row.outcomeId}</p>
+                          <p>↳ {outcomeLive?.title || (outcome?.label || row.outcomeId)}</p>
                           {row.indicatorIds.map(indId => {
-                            const ind = INDICATORS_DATA.find(i => i.id === indId);
-                            return <p key={indId} className="ml-5 text-muted-foreground/80">• {ind?.label || indId}</p>;
+                            const indLive = outcomeLive?.indicators.find(ii => ii.code === indId) || null;
+                            const ind = INDICATORS_DATA.find(ii => ii.id === indId);
+                            return <p key={indId} className="ml-5 text-muted-foreground/80">• {indLive ? `${indLive.code} – ${indLive.title}` : (ind?.label || indId)}</p>;
                           })}
                         </div>
                       );

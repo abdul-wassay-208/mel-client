@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
 import { IndicatorConfig, IndicatorFieldConfig } from '@/config/indicatorFieldMappings';
+import { apiGetConfig, type IndicatorOverridesConfig } from '@/lib/api';
 import { Plus, Trash2, Copy, AlertCircle } from 'lucide-react';
 
 export interface IndicatorEntryRow {
@@ -99,6 +100,27 @@ function MultiRowIndicatorForm({
   validationErrors = {},
 }: MultiRowIndicatorFormProps) {
   const [highlightedRow, setHighlightedRow] = useState<string | null>(null);
+  const [labelOverrides, setLabelOverrides] = useState<Record<string, string> | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await apiGetConfig<IndicatorOverridesConfig>('indicatorOverrides');
+        if (!alive) return;
+        const byIndicator = res.value?.labels?.[config.code] || null;
+        setLabelOverrides(byIndicator);
+      } catch {
+        if (!alive) return;
+        setLabelOverrides(null);
+      }
+    })();
+    return () => { alive = false; };
+  }, [config.code]);
+
+  const fieldLabel = useCallback((field: IndicatorFieldConfig) => {
+    return labelOverrides?.[field.key] || field.label;
+  }, [labelOverrides]);
 
   const addRow = useCallback(() => {
     const newRow = createEmptyRow(config);
@@ -155,7 +177,7 @@ function MultiRowIndicatorForm({
                 <TableHead className="text-[12px] font-semibold uppercase tracking-wider w-10 text-center">#</TableHead>
                 {config.fields.map(f => (
                   <TableHead key={f.key} className="text-[12px] font-semibold uppercase tracking-wider">
-                    {f.label} {f.required && <span className="text-destructive">*</span>}
+                    {fieldLabel(f)} {f.required && <span className="text-destructive">*</span>}
                   </TableHead>
                 ))}
                 {!disabled && (
@@ -174,11 +196,12 @@ function MultiRowIndicatorForm({
                   >
                     <TableCell className="text-center text-[13px] text-muted-foreground font-medium">{idx + 1}</TableCell>
                     {config.fields.map(field => {
-                      const fieldHasError = rowErrors.some(e => e.toLowerCase().includes(field.label.toLowerCase()));
+                      const effectiveLabel = fieldLabel(field);
+                      const fieldHasError = rowErrors.some(e => e.toLowerCase().includes(effectiveLabel.toLowerCase()));
                       return (
                         <TableCell key={field.key} className="py-2">
                           <CellField
-                            field={field}
+                            field={{ ...field, label: effectiveLabel }}
                             value={row[field.key]}
                             onChange={v => updateRowField(row.id, field.key, v)}
                             disabled={disabled}

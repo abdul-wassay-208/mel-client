@@ -13,7 +13,8 @@ import { getIndicatorConfig } from '@/config/indicatorFieldMappings';
 import MultiRowIndicatorForm, { IndicatorEntryRow, validateIndicatorRows } from '@/components/MultiRowIndicatorForm';
 import { Target, TrendingUp, Gauge, ChevronDown, ChevronRight, Check, AlertCircle, Send, FileEdit, ArrowLeft, Save } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { apiSubmitDisaggregatedData, apiGetReport, ApiDisaggregatedRow } from '@/lib/api';
+import { apiSubmitDisaggregatedData, apiGetReport, ApiDisaggregatedRow, apiGetConfig } from '@/lib/api';
+import { findMelIndicatorByCode, melIndicatorToIndicatorConfig, type MelConfigPayload } from '@/lib/melConfigLive';
 
 export default function ReportingInterface() {
   const { projectId, reportId } = useParams<{ projectId: string; reportId: string }>();
@@ -39,12 +40,34 @@ export default function ReportingInterface() {
   const [editRequestFields, setEditRequestFields] = useState<string[]>([]);
   const [editRequestReason, setEditRequestReason] = useState('');
   const [multiRowErrors, setMultiRowErrors] = useState<Record<string, Record<string, string[]>>>({});
+  const [melLiveObjectives, setMelLiveObjectives] = useState<MelConfigPayload['objectives'] | null>(null);
 
   if (!project || !report) return <div className="p-6">Project or report not found</div>;
 
   const canEdit = report.state === 'draft' || report.state === 'unlocked';
   const canPublish = report.state === 'draft' || report.state === 'unlocked';
   const canRequestEdit = report.state === 'published' || report.state === 're_published';
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await apiGetConfig<MelConfigPayload>('melConfigLive');
+        if (!alive) return;
+        setMelLiveObjectives(res.value?.objectives ?? null);
+      } catch {
+        if (!alive) return;
+        setMelLiveObjectives(null);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  const getRuntimeIndicatorConfig = (indicatorId: string, indicatorName?: string) => {
+    const live = findMelIndicatorByCode(melLiveObjectives, indicatorId);
+    if (live) return melIndicatorToIndicatorConfig(live);
+    return getIndicatorConfig(indicatorId, indicatorName);
+  };
 
   const updateMultiRows = (indicatorId: string, rows: IndicatorEntryRow[]) => {
     setMultiRowData(prev => ({ ...prev, [indicatorId]: rows }));
@@ -63,7 +86,7 @@ export default function ReportingInterface() {
         const mapRow = (row: ApiDisaggregatedRow): IndicatorEntryRow | null => {
           const indIdStr = String(row.indicatorId);
           const indicator = indicators.find(i => i.id === indIdStr);
-          const config = getIndicatorConfig(indIdStr, row.indicator?.name ?? indicator?.name);
+          const config = getRuntimeIndicatorConfig(indIdStr, row.indicator?.name ?? indicator?.name);
           if (!config) return null;
           const entry: IndicatorEntryRow = { id: `db-${row.id}` };
 
@@ -156,7 +179,7 @@ export default function ReportingInterface() {
   const buildSaveData = (): DisaggregatedData[] => {
     const result: DisaggregatedData[] = [];
     allIndicators.forEach(ind => {
-      const config = getIndicatorConfig(ind.id, ind.name);
+      const config = getRuntimeIndicatorConfig(ind.id, ind.name);
       const rows = multiRowData[ind.id];
       if (config && rows && rows.length > 0) {
         rows.forEach(row => {
@@ -175,7 +198,7 @@ export default function ReportingInterface() {
     const allErrors: Record<string, Record<string, string[]>> = {};
     let hasError = false;
     allIndicators.forEach(ind => {
-      const config = getIndicatorConfig(ind.id, ind.name);
+      const config = getRuntimeIndicatorConfig(ind.id, ind.name);
       if (!config) return;
       const rows = multiRowData[ind.id] || [];
       if (rows.length === 0) return;
@@ -316,7 +339,7 @@ export default function ReportingInterface() {
   };
 
   const getFilledCount = (indicatorId: string, indicatorName: string) => {
-    const config = getIndicatorConfig(indicatorId, indicatorName);
+    const config = getRuntimeIndicatorConfig(indicatorId, indicatorName);
     if (!config) return { filled: 0, total: 0 };
     const rows = multiRowData[indicatorId] || [];
     if (rows.length === 0) return { filled: 0, total: config.fields.length };
@@ -392,7 +415,7 @@ export default function ReportingInterface() {
                   const indicatorErrors = multiRowErrors[ind.id] || {};
                   const hasErrors = Object.keys(indicatorErrors).length > 0;
                   const { filled, total } = getFilledCount(ind.id, ind.name);
-                  const config = getIndicatorConfig(ind.id, ind.name);
+                  const config = getRuntimeIndicatorConfig(ind.id, ind.name);
                   const rows = multiRowData[ind.id] || [];
                   return (
                     <div key={ind.id} className="ml-8 border-t border-border">
@@ -479,7 +502,7 @@ export default function ReportingInterface() {
             </div>
             {editRequestIndicator && (() => {
               const ind = allIndicators.find(i => i.id === editRequestIndicator);
-              const config = getIndicatorConfig(editRequestIndicator, ind?.name);
+              const config = getRuntimeIndicatorConfig(editRequestIndicator, ind?.name);
               const fieldKeys = config ? config.fields.map(f => f.key) : [];
               return fieldKeys.length > 0 ? (
                 <div className="space-y-2">

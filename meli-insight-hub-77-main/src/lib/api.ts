@@ -4,7 +4,7 @@ export interface ApiUser {
   id: number;
   name: string;
   email: string;
-  role: "ADMIN" | "PROJECT_LEAD";
+  role: "ADMIN" | "PROJECT_LEAD" | "SUPER_ADMIN";
 }
 
 interface LoginResponse {
@@ -49,7 +49,7 @@ export interface ApiUserRecord {
   id: number;
   name: string;
   email: string;
-  role: "ADMIN" | "PROJECT_LEAD";
+  role: "ADMIN" | "PROJECT_LEAD" | "SUPER_ADMIN";
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -61,7 +61,7 @@ export async function apiGetUsers(): Promise<ApiUserRecord[]> {
   return request<ApiUserRecord[]>("/users");
 }
 
-export async function apiCreateUser(payload: { name: string; email: string; role: "ADMIN" | "PROJECT_LEAD" }) {
+export async function apiCreateUser(payload: { name: string; email: string; role: "ADMIN" | "PROJECT_LEAD" | "SUPER_ADMIN" }) {
   return request<ApiUserRecord & { tempPassword?: string }>("/users", {
     method: "POST",
     body: JSON.stringify(payload),
@@ -70,7 +70,7 @@ export async function apiCreateUser(payload: { name: string; email: string; role
 
 export async function apiUpdateUser(
   id: number,
-  data: Partial<{ name: string; role: "ADMIN" | "PROJECT_LEAD"; isActive: boolean }>
+  data: Partial<{ name: string; role: "ADMIN" | "PROJECT_LEAD" | "SUPER_ADMIN"; isActive: boolean }>
 ) {
   return request<ApiUserRecord>(`/users/${id}`, {
     method: "PATCH",
@@ -78,10 +78,16 @@ export async function apiUpdateUser(
   });
 }
 
+export async function apiResendInvite(userId: number) {
+  return request<{ message: string; inviteLink?: string; email?: any }>(`/users/${userId}/resend-invite`, {
+    method: "POST",
+  });
+}
+
 export interface InvitePreview {
   name: string;
   email: string;
-  role: "ADMIN" | "PROJECT_LEAD";
+  role: "ADMIN" | "PROJECT_LEAD" | "SUPER_ADMIN";
 }
 
 export async function apiGetInvite(token: string): Promise<InvitePreview> {
@@ -95,6 +101,37 @@ export async function apiAcceptInvite(
   return request<{ token: string; user: ApiUser }>(`/auth/invite/${token}`, {
     method: "POST",
     body: JSON.stringify({ password }),
+  });
+}
+
+// ── App Config (SUPER_ADMIN) ──────────────────────────────────────────────────
+
+export type AppConfigKey = "projectCategories" | "indicatorOverrides" | "melConfigDraft" | "melConfigLive";
+
+export type ProjectCategoriesConfig = {
+  generalCategories: string[];
+  specificCategoriesByGeneral: Record<string, string[]>;
+};
+
+export type IndicatorOverridesConfig = {
+  // indicatorId -> fieldKey -> label
+  labels?: Record<string, Record<string, string>>;
+};
+
+export type AppConfigResponse<T> = {
+  key: AppConfigKey;
+  value: T | null;
+  updatedAt?: string;
+};
+
+export async function apiGetConfig<T>(key: AppConfigKey): Promise<AppConfigResponse<T>> {
+  return request<AppConfigResponse<T>>(`/config/${key}`);
+}
+
+export async function apiSetConfig<T>(key: AppConfigKey, value: T): Promise<AppConfigResponse<T>> {
+  return request<AppConfigResponse<T>>(`/config/${key}`, {
+    method: "PUT",
+    body: JSON.stringify({ value }),
   });
 }
 

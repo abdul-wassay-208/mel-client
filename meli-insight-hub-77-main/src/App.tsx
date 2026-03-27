@@ -21,6 +21,7 @@ import ReportingInterface from "./pages/lead/ReportingInterface";
 import LearningModule from "./pages/lead/LearningModule";
 import Notifications from "./pages/Notifications";
 import NotFound from "./pages/NotFound";
+import MELConfigBuilder from "./pages/superadmin/MELConfigBuilder";
 
 const queryClient = new QueryClient();
 
@@ -29,6 +30,14 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   if (loading) return null;
   if (!user) return <Navigate to="/login" replace />;
   if (!isAdmin) return <Navigate to="/lead" replace />;
+  return <MainLayout>{children}</MainLayout>;
+}
+
+function SuperAdminRoute({ children }: { children: React.ReactNode }) {
+  const { user, isSuperAdmin, loading } = useAuth();
+  if (loading) return null;
+  if (!user) return <Navigate to="/login" replace />;
+  if (!isSuperAdmin) return <Navigate to="/admin" replace />;
   return <MainLayout>{children}</MainLayout>;
 }
 
@@ -51,6 +60,7 @@ function RootRedirect() {
   const { user, loading } = useAuth();
   if (loading) return null;
   if (!user) return <Navigate to="/login" replace />;
+  if (user.role === 'super_admin') return <Navigate to="/superadmin/mel-config" replace />;
   return <Navigate to={user.role === 'admin' ? '/admin' : '/lead'} replace />;
 }
 
@@ -76,6 +86,9 @@ const App = () => (
               <Route path="/admin/audit-log" element={<AdminRoute><AuditLog /></AdminRoute>} />
               <Route path="/admin/analytics" element={<AdminRoute><Analytics /></AdminRoute>} />
               <Route path="/admin/users" element={<AdminRoute><UserManagement /></AdminRoute>} />
+
+              {/* Super Admin Routes */}
+              <Route path="/superadmin/mel-config" element={<SuperAdminRoute><MELConfigBuilder /></SuperAdminRoute>} />
 
               {/* Project Lead Routes */}
               <Route path="/lead" element={<LeadRoute><LeadDashboard /></LeadRoute>} />

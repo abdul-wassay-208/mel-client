@@ -7,12 +7,23 @@ import {
 import { NavLink } from '@/components/NavLink';
 import {
   LayoutDashboard, FolderPlus, FileEdit, ClipboardList, BarChart3,
-  Bell, BookOpen, LogOut, Activity, Users,
+  Bell, BookOpen, LogOut, Activity, Users, Settings2, Crown,
 } from 'lucide-react';
 
 export function AppSidebar() {
-  const { user, isAdmin, logout } = useAuth();
+  const { user, isAdmin, isSuperAdmin, logout } = useAuth();
   const navigate = useNavigate();
+
+  const superAdminItems = [
+    { title: 'Dashboard', url: '/admin', icon: LayoutDashboard },
+    { title: 'MEL Config Builder', url: '/superadmin/mel-config', icon: Settings2 },
+    { title: 'Create Project', url: '/admin/projects/new', icon: FolderPlus },
+    { title: 'Edit Requests', url: '/admin/edit-requests', icon: FileEdit },
+    { title: 'Audit Log', url: '/admin/audit-log', icon: ClipboardList },
+    { title: 'Analytics', url: '/admin/analytics', icon: BarChart3 },
+    { title: 'User Management', url: '/admin/users', icon: Users },
+    { title: 'Notifications', url: '/notifications', icon: Bell },
+  ];
 
   const adminItems = [
     { title: 'Dashboard', url: '/admin', icon: LayoutDashboard },
@@ -30,7 +41,7 @@ export function AppSidebar() {
     { title: 'Notifications', url: '/notifications', icon: Bell },
   ];
 
-  const items = isAdmin ? adminItems : leadItems;
+  const items = isSuperAdmin ? superAdminItems : isAdmin ? adminItems : leadItems;
 
   return (
     <Sidebar className="border-r border-sidebar-border">
@@ -38,12 +49,12 @@ export function AppSidebar() {
       <div className="px-5 py-5 border-b border-sidebar-border">
         <div className="flex items-center gap-3">
           <div className="h-9 w-9 rounded-xl bg-primary flex items-center justify-center shadow-sm">
-            <Activity className="h-[18px] w-[18px] text-primary-foreground" />
+            {isSuperAdmin ? <Crown className="h-[18px] w-[18px] text-primary-foreground" /> : <Activity className="h-[18px] w-[18px] text-primary-foreground" />}
           </div>
           <div>
             <span className="font-semibold text-[15px] tracking-tight text-foreground">MEL Platform</span>
             <p className="text-[11px] text-muted-foreground leading-none mt-0.5 tracking-wide uppercase">
-              {user?.role === 'admin' ? 'Admin Portal' : 'Project Portal'}
+              {isSuperAdmin ? 'Super Admin' : user?.role === 'admin' ? 'Admin Portal' : 'Project Portal'}
             </p>
           </div>
         </div>

@@ -16,7 +16,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { useToast } from '@/hooks/use-toast';
-import { apiGetUsers, apiCreateUser, apiUpdateUser, ApiUserRecord } from '@/lib/api';
+import { apiGetUsers, apiCreateUser, apiUpdateUser, apiResendInvite, ApiUserRecord } from '@/lib/api';
 
 // ── Types ──
 type UserStatus = 'active' | 'invited' | 'disabled';
@@ -24,7 +24,7 @@ interface ManagedUser {
   id: number;
   name: string;
   email: string;
-  role: 'admin' | 'project_lead';
+  role: 'super_admin' | 'admin' | 'project_lead';
   status: UserStatus;
   projectIds: string[];
   createdAt: string;
@@ -55,7 +55,14 @@ function StatusPill({ status }: { status: UserStatus }) {
   );
 }
 
-function RolePill({ role }: { role: 'admin' | 'project_lead' }) {
+function RolePill({ role }: { role: 'super_admin' | 'admin' | 'project_lead' }) {
+  if (role === 'super_admin') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-warning/15 text-warning-foreground">
+        <ShieldCheck className="h-3 w-3" /> Super Admin
+      </span>
+    );
+  }
   return role === 'admin' ? (
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-primary/10 text-primary">
       <ShieldCheck className="h-3 w-3" /> Admin
@@ -161,13 +168,13 @@ export default function UserManagement() {
   // Add form state
   const [formName, setFormName] = useState('');
   const [formEmail, setFormEmail] = useState('');
-  const [formRole, setFormRole] = useState<'admin' | 'project_lead'>('project_lead');
+  const [formRole, setFormRole] = useState<'admin' | 'project_lead' | 'super_admin'>('project_lead');
   const [formProjects, setFormProjects] = useState<string[]>([]);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   // Edit form state
   const [editName, setEditName] = useState('');
-  const [editRole, setEditRole] = useState<'admin' | 'project_lead'>('project_lead');
+  const [editRole, setEditRole] = useState<'admin' | 'project_lead' | 'super_admin'>('project_lead');
   const [editProjects, setEditProjects] = useState<string[]>([]);
 
   // Load users from backend
@@ -179,7 +186,7 @@ export default function UserManagement() {
           id: u.id,
           name: u.name,
           email: u.email,
-          role: u.role === 'ADMIN' ? 'admin' : 'project_lead',
+          role: u.role === 'SUPER_ADMIN' ? 'super_admin' : (u.role === 'ADMIN' ? 'admin' : 'project_lead'),
           status: !u.isActive && u.inviteToken ? 'invited' : u.isActive ? 'active' : 'disabled',
           projectIds: [],
           createdAt: u.createdAt,
@@ -211,13 +218,13 @@ export default function UserManagement() {
   const totalPages = Math.ceil(filtered.length / perPage);
   const paginated = filtered.slice((page - 1) * perPage, page * perPage);
 
-  const totalAdmins = users.filter(u => u.role === 'admin').length;
+  const totalAdmins = users.filter(u => u.role === 'admin' || u.role === 'super_admin').length;
   const totalLeads = users.filter(u => u.role === 'project_lead').length;
   const activeUsers = users.filter(u => u.status === 'active').length;
   const pendingInvites = users.filter(u => u.status === 'invited').length;
 
   const activeFilters = [
-    roleFilter && { key: 'role', label: `Role: ${roleFilter === 'admin' ? 'Admin' : 'Project Lead'}` },
+    roleFilter && { key: 'role', label: `Role: ${roleFilter === 'admin' ? 'Admin' : roleFilter === 'super_admin' ? 'Super Admin' : 'Project Lead'}` },
     statusFilter && { key: 'status', label: `Status: ${statusConfig[statusFilter as UserStatus]?.label}` },
   ].filter(Boolean) as { key: string; label: string }[];
 
@@ -240,13 +247,13 @@ export default function UserManagement() {
         const created = await apiCreateUser({
           name: formName.trim(),
           email: formEmail.trim().toLowerCase(),
-          role: formRole === 'admin' ? 'ADMIN' : 'PROJECT_LEAD',
+          role: formRole === 'super_admin' ? 'SUPER_ADMIN' : (formRole === 'admin' ? 'ADMIN' : 'PROJECT_LEAD'),
         });
         const mapped: ManagedUser = {
           id: created.id,
           name: created.name,
           email: created.email,
-          role: created.role === 'ADMIN' ? 'admin' : 'project_lead',
+          role: created.role === 'SUPER_ADMIN' ? 'super_admin' : (created.role === 'ADMIN' ? 'admin' : 'project_lead'),
           status: created.isActive ? 'active' : 'disabled',
           projectIds: [],
           createdAt: created.createdAt,
@@ -257,7 +264,7 @@ export default function UserManagement() {
         resetAddForm();
         toast({
           title: 'User created',
-          description: `${mapped.name} has been created as ${formRole === 'admin' ? 'Admin' : 'Project Lead'}.`,
+          description: `${mapped.name} has been created as ${formRole === 'super_admin' ? 'Super Admin' : formRole === 'admin' ? 'Admin' : 'Project Lead'}.`,
         });
       } catch (err: any) {
         console.error(err);
@@ -276,7 +283,7 @@ export default function UserManagement() {
       try {
         const updated = await apiUpdateUser(editUser.id, {
           name: editName,
-          role: editRole === 'admin' ? 'ADMIN' : 'PROJECT_LEAD',
+          role: editRole === 'super_admin' ? 'SUPER_ADMIN' : (editRole === 'admin' ? 'ADMIN' : 'PROJECT_LEAD'),
         });
         setUsers(prev =>
           prev.map(u =>
@@ -284,7 +291,7 @@ export default function UserManagement() {
               ? {
                   ...u,
                   name: updated.name,
-                  role: updated.role === 'ADMIN' ? 'admin' : 'project_lead',
+                  role: updated.role === 'SUPER_ADMIN' ? 'super_admin' : (updated.role === 'ADMIN' ? 'admin' : 'project_lead'),
                 }
               : u
           )
@@ -326,7 +333,18 @@ export default function UserManagement() {
         }
       })();
     } else if (action === 'resend') {
-      toast({ title: 'Not implemented', description: 'Resend invite will be wired to backend later.' });
+      (async () => {
+        try {
+          const res = await apiResendInvite(user.id);
+          toast({
+            title: 'Invitation resent',
+            description: res?.inviteLink ? `Invite link: ${res.inviteLink}` : `A new invitation was generated for ${user.email}.`,
+          });
+        } catch (err: any) {
+          console.error(err);
+          toast({ title: 'Failed to resend invite', description: err?.message || 'Unknown error', variant: 'destructive' });
+        }
+      })();
     }
     setConfirmAction(null);
   }
@@ -364,7 +382,11 @@ export default function UserManagement() {
         <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
           <div className="flex items-center gap-2 flex-wrap">
             <FilterChip label="Role" value={roleFilter} onChange={v => { setRoleFilter(v); setPage(1); }}
-              options={[{ value: 'admin', label: 'Admin' }, { value: 'project_lead', label: 'Project Lead' }]} />
+              options={[
+                { value: 'super_admin', label: 'Super Admin' },
+                { value: 'admin', label: 'Admin' },
+                { value: 'project_lead', label: 'Project Lead' },
+              ]} />
             <FilterChip label="Status" value={statusFilter} onChange={v => { setStatusFilter(v); setPage(1); }}
               options={[{ value: 'active', label: 'Active' }, { value: 'invited', label: 'Invited' }, { value: 'disabled', label: 'Disabled' }]} />
           </div>
@@ -521,12 +543,12 @@ export default function UserManagement() {
             <div className="space-y-1.5">
               <Label className="field-label">Role</Label>
               <div className="flex gap-2">
-                {(['admin', 'project_lead'] as const).map(r => (
+                {(['super_admin', 'admin', 'project_lead'] as const).map(r => (
                   <button key={r} onClick={() => setFormRole(r)}
                     className={`flex-1 py-2.5 rounded-xl text-[13px] font-medium border transition-all ${
                       formRole === r ? 'bg-primary/8 text-primary border-primary/25 shadow-sm' : 'bg-card text-muted-foreground border-border hover:border-primary/20'
                     }`}>
-                    {r === 'admin' ? 'Admin' : 'Project Lead'}
+                    {r === 'super_admin' ? 'Super Admin' : r === 'admin' ? 'Admin' : 'Project Lead'}
                   </button>
                 ))}
               </div>
@@ -569,12 +591,12 @@ export default function UserManagement() {
               <div className="space-y-1.5">
                 <Label className="field-label">Role</Label>
                 <div className="flex gap-2">
-                  {(['admin', 'project_lead'] as const).map(r => (
+                  {(['super_admin', 'admin', 'project_lead'] as const).map(r => (
                     <button key={r} onClick={() => setEditRole(r)}
                       className={`flex-1 py-2.5 rounded-xl text-[13px] font-medium border transition-all ${
                         editRole === r ? 'bg-primary/8 text-primary border-primary/25 shadow-sm' : 'bg-card text-muted-foreground border-border hover:border-primary/20'
                       }`}>
-                      {r === 'admin' ? 'Admin' : 'Project Lead'}
+                      {r === 'super_admin' ? 'Super Admin' : r === 'admin' ? 'Admin' : 'Project Lead'}
                     </button>
                   ))}
                 </div>
