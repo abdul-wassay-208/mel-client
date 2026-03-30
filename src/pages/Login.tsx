@@ -14,6 +14,8 @@ export default function Login() {
   const [showForgot, setShowForgot] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotSent, setForgotSent] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
 
@@ -24,17 +26,28 @@ export default function Login() {
       setError('Please enter your email and password');
       return;
     }
-    const user = await login(email, password);
-    if (user) {
-      navigate(user.role === 'admin' ? '/admin' : '/lead');
-    } else {
-      setError('Invalid credentials. Try admin@mel.org, james@mel.org, or maria@mel.org (password: "password")');
+    setIsLoading(true);
+    try {
+      const user = await login(email, password);
+      if (user) {
+        navigate(user.role === 'admin' ? '/admin' : '/lead');
+      } else {
+        setError('Invalid credentials. Try admin@mel.org, james@mel.org, or maria@mel.org (password: "password")');
+      }
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleForgot = (e: React.FormEvent) => {
+  const handleForgot = async (e: React.FormEvent) => {
     e.preventDefault();
-    setForgotSent(true);
+    setIsSending(true);
+    try {
+      await new Promise(resolve => setTimeout(resolve, 0));
+      setForgotSent(true);
+    } finally {
+      setIsSending(false);
+    }
   };
 
   return (
@@ -99,8 +112,8 @@ export default function Login() {
                   <p className="text-[13px] text-destructive bg-destructive/8 rounded-lg px-4 py-3 border border-destructive/15">{error}</p>
                 )}
 
-                <Button type="submit" className="w-full h-12 text-[15px] font-medium">
-                  Sign In
+                <Button type="submit" disabled={isLoading} className="w-full h-12 text-[15px] font-medium">
+                  {isLoading ? 'Signing In…' : 'Sign In'}
                 </Button>
               </form>
 
@@ -151,7 +164,9 @@ export default function Login() {
                       required
                     />
                   </div>
-                  <Button type="submit" className="w-full h-12 text-[15px]">Send Reset Link</Button>
+                  <Button type="submit" disabled={isSending} className="w-full h-12 text-[15px]">
+                    {isSending ? 'Sending…' : 'Send Reset Link'}
+                  </Button>
                   <button
                     type="button"
                     onClick={() => setShowForgot(false)}

@@ -171,11 +171,16 @@ export default function UserManagement() {
   const [formRole, setFormRole] = useState<'admin' | 'project_lead' | 'super_admin'>('project_lead');
   const [formProjects, setFormProjects] = useState<string[]>([]);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [addingUser, setAddingUser] = useState(false);
 
   // Edit form state
   const [editName, setEditName] = useState('');
   const [editRole, setEditRole] = useState<'admin' | 'project_lead' | 'super_admin'>('project_lead');
   const [editProjects, setEditProjects] = useState<string[]>([]);
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  // Confirm action loading
+  const [executingAction, setExecutingAction] = useState(false);
 
   // Load users from backend
   useEffect(() => {
@@ -233,120 +238,111 @@ export default function UserManagement() {
     setFormName(''); setFormEmail(''); setFormRole('project_lead'); setFormProjects([]); setFormErrors({});
   }
 
-  function handleAddUser() {
+  async function handleAddUser() {
     const errors: Record<string, string> = {};
     if (!formName.trim()) errors.name = 'Name is required';
     if (!formEmail.trim()) errors.email = 'Email is required';
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formEmail)) errors.email = 'Invalid email';
     else if (users.some(u => u.email.toLowerCase() === formEmail.toLowerCase())) errors.email = 'Email already exists';
-    // Project assignments to be wired later
     if (Object.keys(errors).length) { setFormErrors(errors); return; }
 
-    (async () => {
-      try {
-        const created = await apiCreateUser({
-          name: formName.trim(),
-          email: formEmail.trim().toLowerCase(),
-          role: formRole === 'super_admin' ? 'SUPER_ADMIN' : (formRole === 'admin' ? 'ADMIN' : 'PROJECT_LEAD'),
-        });
-        const mapped: ManagedUser = {
-          id: created.id,
-          name: created.name,
-          email: created.email,
-          role: created.role === 'SUPER_ADMIN' ? 'super_admin' : (created.role === 'ADMIN' ? 'admin' : 'project_lead'),
-          status: created.isActive ? 'active' : 'disabled',
-          projectIds: [],
-          createdAt: created.createdAt,
-          lastLogin: null,
-        };
-        setUsers(prev => [mapped, ...prev]);
-        setAddOpen(false);
-        resetAddForm();
-        toast({
-          title: 'User created',
-          description: `${mapped.name} has been created as ${formRole === 'super_admin' ? 'Super Admin' : formRole === 'admin' ? 'Admin' : 'Project Lead'}.`,
-        });
-      } catch (err: any) {
-        console.error(err);
-        setFormErrors(prev => ({ ...prev, email: err?.message || 'Failed to create user' }));
-      }
-    })();
+    setAddingUser(true);
+    try {
+      const created = await apiCreateUser({
+        name: formName.trim(),
+        email: formEmail.trim().toLowerCase(),
+        role: formRole === 'super_admin' ? 'SUPER_ADMIN' : (formRole === 'admin' ? 'ADMIN' : 'PROJECT_LEAD'),
+      });
+      const mapped: ManagedUser = {
+        id: created.id,
+        name: created.name,
+        email: created.email,
+        role: created.role === 'SUPER_ADMIN' ? 'super_admin' : (created.role === 'ADMIN' ? 'admin' : 'project_lead'),
+        status: created.isActive ? 'active' : 'disabled',
+        projectIds: [],
+        createdAt: created.createdAt,
+        lastLogin: null,
+      };
+      setUsers(prev => [mapped, ...prev]);
+      setAddOpen(false);
+      resetAddForm();
+      toast({
+        title: 'User created',
+        description: `${mapped.name} has been created as ${formRole === 'super_admin' ? 'Super Admin' : formRole === 'admin' ? 'Admin' : 'Project Lead'}.`,
+      });
+    } catch (err: any) {
+      console.error(err);
+      setFormErrors(prev => ({ ...prev, email: err?.message || 'Failed to create user' }));
+    } finally {
+      setAddingUser(false);
+    }
   }
 
   function openEdit(u: ManagedUser) {
     setEditUser(u); setEditName(u.name); setEditRole(u.role); setEditProjects([...u.projectIds]);
   }
 
-  function handleSaveEdit() {
+  async function handleSaveEdit() {
     if (!editUser) return;
-    (async () => {
-      try {
-        const updated = await apiUpdateUser(editUser.id, {
-          name: editName,
-          role: editRole === 'super_admin' ? 'SUPER_ADMIN' : (editRole === 'admin' ? 'ADMIN' : 'PROJECT_LEAD'),
-        });
-        setUsers(prev =>
-          prev.map(u =>
-            u.id === editUser.id
-              ? {
-                  ...u,
-                  name: updated.name,
-                  role: updated.role === 'SUPER_ADMIN' ? 'super_admin' : (updated.role === 'ADMIN' ? 'admin' : 'project_lead'),
-                }
-              : u
-          )
-        );
-        setEditUser(null);
-        toast({ title: 'User updated', description: `${editName}'s details have been saved.` });
-      } catch (err: any) {
-        console.error(err);
-        toast({ title: 'Failed to update user', description: err?.message || 'Unknown error', variant: 'destructive' });
-      }
-    })();
+    setSavingEdit(true);
+    try {
+      const updated = await apiUpdateUser(editUser.id, {
+        name: editName,
+        role: editRole === 'super_admin' ? 'SUPER_ADMIN' : (editRole === 'admin' ? 'ADMIN' : 'PROJECT_LEAD'),
+      });
+      setUsers(prev =>
+        prev.map(u =>
+          u.id === editUser.id
+            ? {
+                ...u,
+                name: updated.name,
+                role: updated.role === 'SUPER_ADMIN' ? 'super_admin' : (updated.role === 'ADMIN' ? 'admin' : 'project_lead'),
+              }
+            : u
+        )
+      );
+      setEditUser(null);
+      toast({ title: 'User updated', description: `${editName}'s details have been saved.` });
+    } catch (err: any) {
+      console.error(err);
+      toast({ title: 'Failed to update user', description: err?.message || 'Unknown error', variant: 'destructive' });
+    } finally {
+      setSavingEdit(false);
+    }
   }
 
-  function executeAction() {
+  async function executeAction() {
     if (!confirmAction) return;
     const { user, action } = confirmAction;
     if (action === 'disable') {
       if (String(user.id) === CURRENT_ADMIN_ID) { toast({ title: 'Cannot disable yourself', variant: 'destructive' }); setConfirmAction(null); return; }
       if (user.role === 'admin' && totalAdmins <= 1) { toast({ title: 'Cannot disable', description: 'At least one admin must remain active.', variant: 'destructive' }); setConfirmAction(null); return; }
-      (async () => {
-        try {
-          await apiUpdateUser(user.id, { isActive: false });
-          setUsers(prev => prev.map(u => u.id === user.id ? { ...u, status: 'disabled' as UserStatus } : u));
-          toast({ title: 'User disabled', description: `${user.name} can no longer access the system.` });
-        } catch (err: any) {
-          console.error(err);
-          toast({ title: 'Failed to disable user', description: err?.message || 'Unknown error', variant: 'destructive' });
-        }
-      })();
-    } else if (action === 'reactivate') {
-      (async () => {
-        try {
-          await apiUpdateUser(user.id, { isActive: true });
-          setUsers(prev => prev.map(u => u.id === user.id ? { ...u, status: 'active' as UserStatus } : u));
-          toast({ title: 'User reactivated', description: `${user.name} can now access the system.` });
-        } catch (err: any) {
-          console.error(err);
-          toast({ title: 'Failed to reactivate user', description: err?.message || 'Unknown error', variant: 'destructive' });
-        }
-      })();
-    } else if (action === 'resend') {
-      (async () => {
-        try {
-          const res = await apiResendInvite(user.id);
-          toast({
-            title: 'Invitation resent',
-            description: res?.inviteLink ? `Invite link: ${res.inviteLink}` : `A new invitation was generated for ${user.email}.`,
-          });
-        } catch (err: any) {
-          console.error(err);
-          toast({ title: 'Failed to resend invite', description: err?.message || 'Unknown error', variant: 'destructive' });
-        }
-      })();
     }
-    setConfirmAction(null);
+    setExecutingAction(true);
+    try {
+      if (action === 'disable') {
+        await apiUpdateUser(user.id, { isActive: false });
+        setUsers(prev => prev.map(u => u.id === user.id ? { ...u, status: 'disabled' as UserStatus } : u));
+        toast({ title: 'User disabled', description: `${user.name} can no longer access the system.` });
+      } else if (action === 'reactivate') {
+        await apiUpdateUser(user.id, { isActive: true });
+        setUsers(prev => prev.map(u => u.id === user.id ? { ...u, status: 'active' as UserStatus } : u));
+        toast({ title: 'User reactivated', description: `${user.name} can now access the system.` });
+      } else if (action === 'resend') {
+        const res = await apiResendInvite(user.id);
+        toast({
+          title: 'Invitation resent',
+          description: res?.inviteLink ? `Invite link: ${res.inviteLink}` : `A new invitation was generated for ${user.email}.`,
+        });
+      }
+      setConfirmAction(null);
+    } catch (err: any) {
+      console.error(err);
+      const titles: Record<string, string> = { disable: 'Failed to disable user', reactivate: 'Failed to reactivate user', resend: 'Failed to resend invite' };
+      toast({ title: titles[action] || 'Action failed', description: err?.message || 'Unknown error', variant: 'destructive' });
+    } finally {
+      setExecutingAction(false);
+    }
   }
 
   function toggleProject(pid: string, setter: (fn: (prev: string[]) => string[]) => void) {
@@ -563,8 +559,10 @@ export default function UserManagement() {
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAddOpen(false)} className="rounded-xl">Cancel</Button>
-            <Button onClick={handleAddUser} className="rounded-xl gap-2"><Mail className="h-4 w-4" /> Send Invitation</Button>
+            <Button variant="outline" onClick={() => setAddOpen(false)} disabled={addingUser} className="rounded-xl">Cancel</Button>
+            <Button onClick={handleAddUser} disabled={addingUser} className="rounded-xl gap-2">
+              <Mail className="h-4 w-4" />{addingUser ? 'Sending…' : 'Send Invitation'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -612,8 +610,10 @@ export default function UserManagement() {
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditUser(null)} className="rounded-xl">Cancel</Button>
-            <Button onClick={handleSaveEdit} className="rounded-xl">Save Changes</Button>
+            <Button variant="outline" onClick={() => setEditUser(null)} disabled={savingEdit} className="rounded-xl">Cancel</Button>
+            <Button onClick={handleSaveEdit} disabled={savingEdit} className="rounded-xl">
+              {savingEdit ? 'Saving…' : 'Save Changes'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -721,12 +721,16 @@ export default function UserManagement() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={executeAction}
+            <AlertDialogCancel className="rounded-xl" disabled={executingAction}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={executeAction} disabled={executingAction}
               className={`rounded-xl ${confirmAction?.action === 'disable' ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90' : ''}`}>
-              {confirmAction?.action === 'disable' && 'Disable User'}
-              {confirmAction?.action === 'reactivate' && 'Reactivate'}
-              {confirmAction?.action === 'resend' && 'Resend Invitation'}
+              {executingAction ? 'Processing…' : (
+                <>
+                  {confirmAction?.action === 'disable' && 'Disable User'}
+                  {confirmAction?.action === 'reactivate' && 'Reactivate'}
+                  {confirmAction?.action === 'resend' && 'Resend Invitation'}
+                </>
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
