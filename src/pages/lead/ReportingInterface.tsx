@@ -41,6 +41,8 @@ export default function ReportingInterface() {
   const [editRequestReason, setEditRequestReason] = useState('');
   const [multiRowErrors, setMultiRowErrors] = useState<Record<string, Record<string, string[]>>>({});
   const [melLiveObjectives, setMelLiveObjectives] = useState<MelConfigPayload['objectives'] | null>(null);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [publishing, setPublishing] = useState(false);
 
   if (!project || !report) return <div className="p-6">Project or report not found</div>;
 
@@ -271,31 +273,31 @@ export default function ReportingInterface() {
       return;
     }
     const saveData = buildSaveData();
+    setPublishing(true);
     try {
-      // Persist each disaggregated row to backend
       await Promise.all(
         saveData.map(async (d) => {
           const payload = toApiPayload(mapRowToPayload(d.indicatorId, d));
           await apiSubmitDisaggregatedData(payload);
         })
       );
+
+      updateReportData(project.id, report.id, saveData);
+
+      if (report.state === 'unlocked') {
+        await republishReport(project.id, report.id, user!.id);
+      } else {
+        await publishReport(project.id, report.id, user!.id);
+      }
+      setShowPublishDialog(false);
+      toast({ title: 'Report Published', description: 'Your report has been published successfully.' });
+      navigate('/lead');
     } catch (err: any) {
       console.error(err);
       toast({ title: 'Failed to save data to server', description: err?.message || 'Unknown error', variant: 'destructive' });
-      return;
+    } finally {
+      setPublishing(false);
     }
-
-    // Only update local state after server save succeeds (prevents "data wiped" on failed requests)
-    updateReportData(project.id, report.id, saveData);
-
-    if (report.state === 'unlocked') {
-      await republishReport(project.id, report.id, user!.id);
-    } else {
-      await publishReport(project.id, report.id, user!.id);
-    }
-    setShowPublishDialog(false);
-    toast({ title: 'Report Published', description: 'Your report has been published successfully.' });
-    navigate('/lead');
   };
 
   const handleEditRequest = () => {
@@ -314,7 +316,6 @@ export default function ReportingInterface() {
   const handleSaveDraft = async () => {
     const saveData = buildSaveData();
 
-    // Only persist non-empty rows (backend rejects completely empty rows).
     const toPersist = saveData.filter((d) => {
       const { indicatorId, ...rest } = d as any;
       return Object.values(rest).some((v) => {
@@ -324,6 +325,7 @@ export default function ReportingInterface() {
       });
     });
 
+    setSavingDraft(true);
     try {
       await Promise.all(
         toPersist.map(async (d) => {
@@ -331,14 +333,14 @@ export default function ReportingInterface() {
           await apiSubmitDisaggregatedData(payload);
         })
       );
+      updateReportData(project.id, report.id, saveData);
+      toast({ title: 'Draft Saved', description: 'Your draft has been saved to the database.' });
     } catch (err: any) {
       console.error(err);
       toast({ title: 'Failed to save draft to server', description: err?.message || 'Unknown error', variant: 'destructive' });
-      return;
+    } finally {
+      setSavingDraft(false);
     }
-
-    updateReportData(project.id, report.id, saveData);
-    toast({ title: 'Draft Saved', description: 'Your draft has been saved to the database.' });
   };
 
   const toggleField = (field: string) => {
@@ -382,10 +384,10 @@ export default function ReportingInterface() {
             )}
             {canEdit && (
               <>
-                <Button variant="outline" className="h-11" onClick={handleSaveDraft}>
-                  <Save className="h-4 w-4 mr-2" />Save Draft
+                <Button variant="outline" className="h-11" disabled={savingDraft || publishing} onClick={handleSaveDraft}>
+                  <Save className="h-4 w-4 mr-2" />{savingDraft ? 'Saving…' : 'Save Draft'}
                 </Button>
-                <Button className="h-11" onClick={() => { if (validateAll()) setShowPublishDialog(true); else toast({ title: 'Incomplete', description: 'Fill all required fields first.', variant: 'destructive' }); }}>
+                <Button className="h-11" disabled={savingDraft || publishing} onClick={() => { if (validateAll()) setShowPublishDialog(true); else toast({ title: 'Incomplete', description: 'Fill all required fields first.', variant: 'destructive' }); }}>
                   <Send className="h-4 w-4 mr-2" />{report.state === 'unlocked' ? 'Re-Publish' : 'Publish'}
                 </Button>
               </>
@@ -485,8 +487,10 @@ export default function ReportingInterface() {
           </DialogHeader>
           <p className="text-[14px] text-muted-foreground">This will lock the report and notify the admin. Are you sure all data is correct?</p>
           <DialogFooter className="gap-3">
-            <Button variant="outline" className="h-11" onClick={() => setShowPublishDialog(false)}>Cancel</Button>
-            <Button className="h-11" onClick={handlePublish}>{report.state === 'unlocked' ? 'Re-Publish' : 'Publish'}</Button>
+            <Button variant="outline" className="h-11" disabled={publishing} onClick={() => setShowPublishDialog(false)}>Cancel</Button>
+            <Button className="h-11" disabled={publishing} onClick={handlePublish}>
+              {publishing ? 'Publishing…' : (report.state === 'unlocked' ? 'Re-Publish' : 'Publish')}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

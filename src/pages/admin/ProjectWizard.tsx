@@ -110,6 +110,7 @@ export default function ProjectWizard() {
   const [newLeadName, setNewLeadName] = useState('');
   const [newLeadEmail, setNewLeadEmail] = useState('');
   const [creatingLead, setCreatingLead] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -265,6 +266,7 @@ export default function ProjectWizard() {
 
   const handleSave = async () => {
     const objectives = buildObjectives();
+    setSaving(true);
     try {
       const created = await apiCreateProject({
         name,
@@ -341,6 +343,8 @@ export default function ProjectWizard() {
         description: err?.message || 'Unknown error',
         variant: 'destructive',
       });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -940,7 +944,9 @@ export default function ProjectWizard() {
         {step < 3 ? (
           <Button className="h-11 px-6" onClick={handleNext}>Continue</Button>
         ) : (
-          <Button className="h-11 px-6" onClick={handleSave}>Create Project & Notify</Button>
+          <Button className="h-11 px-6" disabled={saving} onClick={handleSave}>
+            {saving ? 'Creating…' : 'Create Project & Notify'}
+          </Button>
         )}
       </div>
     </div>
