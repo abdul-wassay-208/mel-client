@@ -17,6 +17,12 @@ import { Badge } from '@/components/ui/badge';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { useToast } from '@/hooks/use-toast';
 import { apiGetUsers, apiCreateUser, apiUpdateUser, apiResendInvite, ApiUserRecord } from '@/lib/api';
+import { z } from 'zod';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { cn } from '@/lib/utils';
+import { getErrorMessage } from '@/lib/errors';
 
 // ── Types ──
 type UserStatus = 'active' | 'invited' | 'disabled';
@@ -166,17 +172,9 @@ export default function UserManagement() {
   const [confirmAction, setConfirmAction] = useState<{ user: ManagedUser; action: 'disable' | 'reactivate' | 'resend' } | null>(null);
 
   // Add form state
-  const [formName, setFormName] = useState('');
-  const [formEmail, setFormEmail] = useState('');
-  const [formRole, setFormRole] = useState<'admin' | 'project_lead' | 'super_admin'>('project_lead');
-  const [formProjects, setFormProjects] = useState<string[]>([]);
-  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [addingUser, setAddingUser] = useState(false);
 
   // Edit form state
-  const [editName, setEditName] = useState('');
-  const [editRole, setEditRole] = useState<'admin' | 'project_lead' | 'super_admin'>('project_lead');
-  const [editProjects, setEditProjects] = useState<string[]>([]);
   const [savingEdit, setSavingEdit] = useState(false);
 
   // Confirm action loading
@@ -234,24 +232,45 @@ export default function UserManagement() {
   ].filter(Boolean) as { key: string; label: string }[];
 
   // ── Handlers ──
-  function resetAddForm() {
-    setFormName(''); setFormEmail(''); setFormRole('project_lead'); setFormProjects([]); setFormErrors({});
-  }
+  const addUserSchema = useMemo(() => z.object({
+    name: z.string().trim().min(1, 'Name is required'),
+    email: z.string().trim().min(1, 'Email is required').email('Invalid email'),
+    role: z.enum(['super_admin', 'admin', 'project_lead']),
+  }).superRefine((val, ctx) => {
+    const exists = users.some(u => u.email.toLowerCase() === val.email.toLowerCase());
+    if (exists) ctx.addIssue({ code: 'custom', path: ['email'], message: 'Email already exists' });
+  }), [users]);
 
-  async function handleAddUser() {
-    const errors: Record<string, string> = {};
-    if (!formName.trim()) errors.name = 'Name is required';
-    if (!formEmail.trim()) errors.email = 'Email is required';
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formEmail)) errors.email = 'Invalid email';
-    else if (users.some(u => u.email.toLowerCase() === formEmail.toLowerCase())) errors.email = 'Email already exists';
-    if (Object.keys(errors).length) { setFormErrors(errors); return; }
+  type AddUserValues = z.infer<typeof addUserSchema>;
 
+  const addForm = useForm<AddUserValues>({
+    resolver: zodResolver(addUserSchema),
+    mode: 'onBlur',
+    reValidateMode: 'onBlur',
+    defaultValues: { name: '', email: '', role: 'project_lead' },
+  });
+
+  const editUserSchema = useMemo(() => z.object({
+    name: z.string().trim().min(1, 'Name is required'),
+    role: z.enum(['super_admin', 'admin', 'project_lead']),
+  }), []);
+
+  type EditUserValues = z.infer<typeof editUserSchema>;
+
+  const editForm = useForm<EditUserValues>({
+    resolver: zodResolver(editUserSchema),
+    mode: 'onBlur',
+    reValidateMode: 'onBlur',
+    defaultValues: { name: '', role: 'project_lead' },
+  });
+
+  async function handleAddUser(values: AddUserValues) {
     setAddingUser(true);
     try {
       const created = await apiCreateUser({
-        name: formName.trim(),
-        email: formEmail.trim().toLowerCase(),
-        role: formRole === 'super_admin' ? 'SUPER_ADMIN' : (formRole === 'admin' ? 'ADMIN' : 'PROJECT_LEAD'),
+        name: values.name.trim(),
+        email: values.email.trim().toLowerCase(),
+        role: values.role === 'super_admin' ? 'SUPER_ADMIN' : (values.role === 'admin' ? 'ADMIN' : 'PROJECT_LEAD'),
       });
       const mapped: ManagedUser = {
         id: created.id,
@@ -265,30 +284,34 @@ export default function UserManagement() {
       };
       setUsers(prev => [mapped, ...prev]);
       setAddOpen(false);
-      resetAddForm();
+      addForm.reset({ name: '', email: '', role: 'project_lead' });
       toast({
         title: 'User created',
-        description: `${mapped.name} has been created as ${formRole === 'super_admin' ? 'Super Admin' : formRole === 'admin' ? 'Admin' : 'Project Lead'}.`,
+        description: `${mapped.name} has been created as ${values.role === 'super_admin' ? 'Super Admin' : values.role === 'admin' ? 'Admin' : 'Project Lead'}.`,
       });
     } catch (err: any) {
       console.error(err);
-      setFormErrors(prev => ({ ...prev, email: err?.message || 'Failed to create user' }));
+      toast({ title: 'Failed to create user', description: getErrorMessage(err), variant: 'destructive' });
     } finally {
       setAddingUser(false);
     }
   }
 
   function openEdit(u: ManagedUser) {
-    setEditUser(u); setEditName(u.name); setEditRole(u.role); setEditProjects([...u.projectIds]);
+    setEditUser(u);
+    editForm.reset({ name: u.name, role: u.role });
   }
 
   async function handleSaveEdit() {
     if (!editUser) return;
+    const ok = await editForm.trigger(undefined, { shouldFocus: true });
+    if (!ok) return;
+    const values = editForm.getValues();
     setSavingEdit(true);
     try {
       const updated = await apiUpdateUser(editUser.id, {
-        name: editName,
-        role: editRole === 'super_admin' ? 'SUPER_ADMIN' : (editRole === 'admin' ? 'ADMIN' : 'PROJECT_LEAD'),
+        name: values.name,
+        role: values.role === 'super_admin' ? 'SUPER_ADMIN' : (values.role === 'admin' ? 'ADMIN' : 'PROJECT_LEAD'),
       });
       setUsers(prev =>
         prev.map(u =>
@@ -302,10 +325,10 @@ export default function UserManagement() {
         )
       );
       setEditUser(null);
-      toast({ title: 'User updated', description: `${editName}'s details have been saved.` });
+      toast({ title: 'User updated', description: `${values.name}'s details have been saved.` });
     } catch (err: any) {
       console.error(err);
-      toast({ title: 'Failed to update user', description: err?.message || 'Unknown error', variant: 'destructive' });
+      toast({ title: 'Failed to update user', description: getErrorMessage(err), variant: 'destructive' });
     } finally {
       setSavingEdit(false);
     }
@@ -359,7 +382,13 @@ export default function UserManagement() {
           <h1 className="page-title">User Management</h1>
           <p className="page-subtitle">Manage system users, roles, and access permissions.</p>
         </div>
-        <Button onClick={() => { resetAddForm(); setAddOpen(true); }} className="gap-2 rounded-xl shadow-sm">
+        <Button
+          onClick={() => {
+            addForm.reset({ name: '', email: '', role: 'project_lead' });
+            setAddOpen(true);
+          }}
+          className="gap-2 rounded-xl shadow-sm"
+        >
           <UserPlus className="h-4 w-4" /> Add New User
         </Button>
       </div>
@@ -480,7 +509,7 @@ export default function UserManagement() {
                           <Mail className="h-4 w-4" />
                         </button>
                       )}
-                      {u.status === 'active' && u.id !== CURRENT_ADMIN_ID && (
+                      {u.status === 'active' && String(u.id) !== String(CURRENT_ADMIN_ID) && (
                         <button onClick={() => setConfirmAction({ user: u, action: 'disable' })} className="p-1.5 rounded-lg hover:bg-destructive/10 transition-colors text-muted-foreground hover:text-destructive" title="Disable">
                           <Ban className="h-4 w-4" />
                         </button>
@@ -519,51 +548,87 @@ export default function UserManagement() {
       {/* ══════════════════════════════════════════ */}
       {/* ADD USER MODAL */}
       {/* ══════════════════════════════════════════ */}
-      <Dialog open={addOpen} onOpenChange={v => { if (!v) resetAddForm(); setAddOpen(v); }}>
+      <Dialog open={addOpen} onOpenChange={v => { if (!v) addForm.reset({ name: '', email: '', role: 'project_lead' }); setAddOpen(v); }}>
         <DialogContent className="sm:max-w-[480px] rounded-2xl">
           <DialogHeader>
             <DialogTitle className="text-lg font-semibold">Add New User</DialogTitle>
             <DialogDescription>Send an invitation to join the MEL Platform.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label className="field-label">Full Name</Label>
-              <Input value={formName} onChange={e => { setFormName(e.target.value); setFormErrors(prev => ({ ...prev, name: '' })); }} placeholder="e.g. Jane Doe" className="rounded-xl" />
-              {formErrors.name && <p className="text-[12px] text-destructive">{formErrors.name}</p>}
-            </div>
-            <div className="space-y-1.5">
-              <Label className="field-label">Email Address</Label>
-              <Input type="email" value={formEmail} onChange={e => { setFormEmail(e.target.value); setFormErrors(prev => ({ ...prev, email: '' })); }} placeholder="jane@example.org" className="rounded-xl" />
-              {formErrors.email && <p className="text-[12px] text-destructive">{formErrors.email}</p>}
-            </div>
-            <div className="space-y-1.5">
-              <Label className="field-label">Role</Label>
-              <div className="flex gap-2">
-                {(['super_admin', 'admin', 'project_lead'] as const).map(r => (
-                  <button key={r} onClick={() => setFormRole(r)}
-                    className={`flex-1 py-2.5 rounded-xl text-[13px] font-medium border transition-all ${
-                      formRole === r ? 'bg-primary/8 text-primary border-primary/25 shadow-sm' : 'bg-card text-muted-foreground border-border hover:border-primary/20'
-                    }`}>
-                    {r === 'super_admin' ? 'Super Admin' : r === 'admin' ? 'Admin' : 'Project Lead'}
-                  </button>
-                ))}
-              </div>
-            </div>
-            {formRole === 'project_lead' && (
-              <div className="space-y-1.5">
-                <Label className="field-label">Assign Projects</Label>
-                <p className="text-[12px] text-muted-foreground">
-                  Project assignment will be wired to live backend data later.
-                </p>
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAddOpen(false)} disabled={addingUser} className="rounded-xl">Cancel</Button>
-            <Button onClick={handleAddUser} disabled={addingUser} className="rounded-xl gap-2">
-              <Mail className="h-4 w-4" />{addingUser ? 'Sending…' : 'Send Invitation'}
-            </Button>
-          </DialogFooter>
+          <Form {...addForm}>
+            <form onSubmit={addForm.handleSubmit(handleAddUser)} className="space-y-4 py-2">
+              <FormField
+                control={addForm.control}
+                name="name"
+                render={({ field, fieldState }) => (
+                  <FormItem className="space-y-1.5">
+                    <FormLabel className="field-label">Full Name</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="e.g. Jane Doe" className={cn("rounded-xl", fieldState.error && "border-destructive focus-visible:ring-destructive")} disabled={addingUser} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={addForm.control}
+                name="email"
+                render={({ field, fieldState }) => (
+                  <FormItem className="space-y-1.5">
+                    <FormLabel className="field-label">Email Address</FormLabel>
+                    <FormControl>
+                      <Input type="email" {...field} placeholder="jane@example.org" className={cn("rounded-xl", fieldState.error && "border-destructive focus-visible:ring-destructive")} disabled={addingUser} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={addForm.control}
+                name="role"
+                render={({ field }) => (
+                  <FormItem className="space-y-1.5">
+                    <FormLabel className="field-label">Role</FormLabel>
+                    <FormControl>
+                      <div className="flex gap-2">
+                        {(['super_admin', 'admin', 'project_lead'] as const).map(r => (
+                          <button
+                            key={r}
+                            type="button"
+                            onClick={() => field.onChange(r)}
+                            disabled={addingUser}
+                            className={`flex-1 py-2.5 rounded-xl text-[13px] font-medium border transition-all ${
+                              field.value === r ? 'bg-primary/8 text-primary border-primary/25 shadow-sm' : 'bg-card text-muted-foreground border-border hover:border-primary/20'
+                            }`}
+                          >
+                            {r === 'super_admin' ? 'Super Admin' : r === 'admin' ? 'Admin' : 'Project Lead'}
+                          </button>
+                        ))}
+                      </div>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {addForm.watch('role') === 'project_lead' && (
+                <div className="space-y-1.5">
+                  <FormLabel className="field-label">Assign Projects</FormLabel>
+                  <p className="text-[12px] text-muted-foreground">
+                    Project assignment will be wired to live backend data later.
+                  </p>
+                </div>
+              )}
+
+              <DialogFooter>
+                <Button variant="outline" type="button" onClick={() => setAddOpen(false)} disabled={addingUser} className="rounded-xl">Cancel</Button>
+                <Button type="submit" disabled={addingUser} className="rounded-xl gap-2">
+                  <Mail className="h-4 w-4" />{addingUser ? 'Sending…' : 'Send Invitation'}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
         </DialogContent>
       </Dialog>
 
@@ -577,37 +642,65 @@ export default function UserManagement() {
             <DialogDescription>Update user details and permissions.</DialogDescription>
           </DialogHeader>
           {editUser && (
-            <div className="space-y-4 py-2">
-              <div className="space-y-1.5">
-                <Label className="field-label">Full Name</Label>
-                <Input value={editName} onChange={e => setEditName(e.target.value)} className="rounded-xl" />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="field-label">Email</Label>
-                <Input value={editUser.email} disabled className="rounded-xl bg-muted" />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="field-label">Role</Label>
-                <div className="flex gap-2">
-                  {(['super_admin', 'admin', 'project_lead'] as const).map(r => (
-                    <button key={r} onClick={() => setEditRole(r)}
-                      className={`flex-1 py-2.5 rounded-xl text-[13px] font-medium border transition-all ${
-                        editRole === r ? 'bg-primary/8 text-primary border-primary/25 shadow-sm' : 'bg-card text-muted-foreground border-border hover:border-primary/20'
-                      }`}>
-                      {r === 'super_admin' ? 'Super Admin' : r === 'admin' ? 'Admin' : 'Project Lead'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {editRole === 'project_lead' && (
+            <Form {...editForm}>
+              <div className="space-y-4 py-2">
+                <FormField
+                  control={editForm.control}
+                  name="name"
+                  render={({ field, fieldState }) => (
+                    <FormItem className="space-y-1.5">
+                      <FormLabel className="field-label">Full Name</FormLabel>
+                      <FormControl>
+                        <Input {...field} className={cn("rounded-xl", fieldState.error && "border-destructive focus-visible:ring-destructive")} disabled={savingEdit} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
                 <div className="space-y-1.5">
-                  <Label className="field-label">Assign Projects</Label>
-                  <p className="text-[12px] text-muted-foreground">
-                    Project assignment will be wired to live backend data later.
-                  </p>
+                  <FormLabel className="field-label">Email</FormLabel>
+                  <Input value={editUser.email} disabled className="rounded-xl bg-muted" />
                 </div>
-              )}
-            </div>
+
+                <FormField
+                  control={editForm.control}
+                  name="role"
+                  render={({ field }) => (
+                    <FormItem className="space-y-1.5">
+                      <FormLabel className="field-label">Role</FormLabel>
+                      <FormControl>
+                        <div className="flex gap-2">
+                          {(['super_admin', 'admin', 'project_lead'] as const).map(r => (
+                            <button
+                              key={r}
+                              type="button"
+                              onClick={() => field.onChange(r)}
+                              disabled={savingEdit}
+                              className={`flex-1 py-2.5 rounded-xl text-[13px] font-medium border transition-all ${
+                                field.value === r ? 'bg-primary/8 text-primary border-primary/25 shadow-sm' : 'bg-card text-muted-foreground border-border hover:border-primary/20'
+                              }`}
+                            >
+                              {r === 'super_admin' ? 'Super Admin' : r === 'admin' ? 'Admin' : 'Project Lead'}
+                            </button>
+                          ))}
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {editForm.watch('role') === 'project_lead' && (
+                  <div className="space-y-1.5">
+                    <FormLabel className="field-label">Assign Projects</FormLabel>
+                    <p className="text-[12px] text-muted-foreground">
+                      Project assignment will be wired to live backend data later.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </Form>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditUser(null)} disabled={savingEdit} className="rounded-xl">Cancel</Button>
@@ -679,7 +772,7 @@ export default function UserManagement() {
                 <Button variant="outline" className="rounded-xl flex-1 gap-2" onClick={() => { setViewUser(null); openEdit(viewUser); }}>
                   <Edit2 className="h-4 w-4" /> Edit
                 </Button>
-                {viewUser.status === 'active' && viewUser.id !== CURRENT_ADMIN_ID && (
+                {viewUser.status === 'active' && String(viewUser.id) !== String(CURRENT_ADMIN_ID) && (
                   <Button variant="outline" className="rounded-xl flex-1 gap-2 text-destructive border-destructive/20 hover:bg-destructive/10"
                     onClick={() => { setViewUser(null); setConfirmAction({ user: viewUser, action: 'disable' }); }}>
                     <Ban className="h-4 w-4" /> Disable

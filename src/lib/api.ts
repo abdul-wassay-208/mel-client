@@ -1,3 +1,5 @@
+import { ApiError } from "@/lib/errors";
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000/api";
 
 export interface ApiUser {
@@ -27,12 +29,18 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
   if (!res.ok) {
     let message = "Request failed";
     try {
-      const body = await res.json();
-      if (body?.message) message = body.message;
+      const contentType = res.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        const body = await res.json();
+        if (body?.message) message = body.message;
+      } else {
+        const text = await res.text();
+        if (text) message = text;
+      }
     } catch {
       // ignore
     }
-    throw new Error(message);
+    throw new ApiError(message, { status: res.status });
   }
 
   return res.json() as Promise<T>;

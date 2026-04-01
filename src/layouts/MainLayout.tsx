@@ -60,16 +60,6 @@ export function MainLayout({ children }: { children: ReactNode }) {
                   </span>
                 )}
               </button>
-              <div className="h-8 w-px bg-border mx-1" />
-              <div className="flex items-center gap-2.5 pl-1">
-                <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center text-primary text-[13px] font-semibold">
-                  {user.name.split(' ').map(n => n[0]).join('')}
-                </div>
-                <div className="hidden sm:block">
-                  <p className="text-[13px] font-medium leading-tight">{user.name}</p>
-                  <p className="text-[11px] text-muted-foreground leading-tight capitalize">{user.role === 'admin' ? 'Administrator' : 'Project Lead'}</p>
-                </div>
-              </div>
             </div>
           </header>
           <main className="flex-1 py-8 px-6 lg:px-8 overflow-auto">

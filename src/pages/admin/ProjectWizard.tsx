@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,11 @@ import { Badge } from '@/components/ui/badge';
 import { apiGetUsers, apiCreateUser, ApiUserRecord, apiCreateProject, apiGetConfig, type ProjectCategoriesConfig } from '@/lib/api';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import type { MelConfigPayload } from '@/lib/melConfigLive';
+import { z } from 'zod';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { cn } from '@/lib/utils';
 
 const steps = ['Project Details', 'Define Structure', 'Assign Lead', 'Confirm & Save'];
 
@@ -84,33 +89,94 @@ export default function ProjectWizard() {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  // Step 1 state
-  const [name, setName] = useState('');
-  const [programLead, setProgramLead] = useState('');
-  const [projectSupport, setProjectSupport] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [generalCat, setGeneralCat] = useState('');
-  const [specificCat, setSpecificCat] = useState('');
-  const [description, setDescription] = useState('');
-  const [interval, setInterval] = useState<'quarterly' | 'monthly'>('quarterly');
-  const [expectedUsers, setExpectedUsers] = useState('');
-  const [step1Errors, setStep1Errors] = useState<string[]>([]);
+  // Step 1 (react-hook-form + zod)
+  const projectDetailsSchema = useMemo(() => z.object({
+    name: z.string().trim().min(1, 'Project name is required'),
+    programLead: z.string().trim().min(1, 'Program lead is required'),
+    projectSupport: z.string().optional().default(''),
+    startDate: z.string().min(1, 'Start date is required'),
+    endDate: z.string().min(1, 'End date is required'),
+    generalCat: z.string().min(1, 'General category is required'),
+    specificCat: z.string().min(1, 'Specific category is required'),
+    description: z.string().trim().min(1, 'Description is required'),
+    interval: z.enum(['quarterly', 'monthly']),
+    expectedUsers: z.preprocess((v) => {
+      if (typeof v === 'number') return v;
+      const s = String(v ?? '').trim();
+      if (!s) return NaN;
+      return Number(s);
+    }, z.number({ invalid_type_error: 'Expected users must be a number' }).positive('Expected users must be a positive number')),
+  }).superRefine((val, ctx) => {
+    if (val.startDate && val.endDate) {
+      const sd = new Date(val.startDate);
+      const ed = new Date(val.endDate);
+      if (!Number.isNaN(sd.getTime()) && !Number.isNaN(ed.getTime()) && sd >= ed) {
+        ctx.addIssue({ code: 'custom', path: ['endDate'], message: 'End date must be after start date' });
+      }
+    }
+  }), []);
+
+  type ProjectDetailsFormValues = z.infer<typeof projectDetailsSchema>;
+
+  const detailsForm = useForm<ProjectDetailsFormValues>({
+    resolver: zodResolver(projectDetailsSchema),
+    mode: 'onBlur',
+    reValidateMode: 'onBlur',
+    defaultValues: {
+      name: '',
+      programLead: '',
+      projectSupport: '',
+      startDate: '',
+      endDate: '',
+      generalCat: '',
+      specificCat: '',
+      description: '',
+      interval: 'quarterly',
+      expectedUsers: 0,
+    },
+  });
+
+  const name = detailsForm.watch('name');
+  const programLead = detailsForm.watch('programLead');
+  const projectSupport = detailsForm.watch('projectSupport');
+  const startDate = detailsForm.watch('startDate');
+  const endDate = detailsForm.watch('endDate');
+  const generalCat = detailsForm.watch('generalCat');
+  const specificCat = detailsForm.watch('specificCat');
+  const description = detailsForm.watch('description');
+  const interval = detailsForm.watch('interval');
+  const expectedUsers = detailsForm.watch('expectedUsers');
+
   const [categoryConfig, setCategoryConfig] = useState<ProjectCategoriesConfig | null>(null);
 
   // Step 2 state
   const [strategicObjectives, setStrategicObjectives] = useState<StrategicObjective[]>([]);
-  const [step2Errors, setStep2Errors] = useState<string[]>([]);
   const [melLiveObjectives, setMelLiveObjectives] = useState<MelConfigPayload['objectives'] | null>(null);
+  const [step2Submitted, setStep2Submitted] = useState(false);
+  const [step2FieldErrors, setStep2FieldErrors] = useState<{
+    global?: string;
+    bySO?: Record<string, { global?: string; byRow?: Record<string, { outcome?: string; indicators?: string }> }>;
+  }>({});
 
   // Step 3 state
   const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
   const [projectLeads, setProjectLeads] = useState<{ id: string; name: string; email: string }[]>([]);
   const [leadDialogOpen, setLeadDialogOpen] = useState(false);
-  const [newLeadName, setNewLeadName] = useState('');
-  const [newLeadEmail, setNewLeadEmail] = useState('');
   const [creatingLead, setCreatingLead] = useState(false);
+  const [step3Submitted, setStep3Submitted] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  const newLeadSchema = useMemo(() => z.object({
+    name: z.string().trim().min(1, 'Full name is required'),
+    email: z.string().trim().min(1, 'Email is required').email('Enter a valid email'),
+  }), []);
+  type NewLeadValues = z.infer<typeof newLeadSchema>;
+  const newLeadForm = useForm<NewLeadValues>({
+    resolver: zodResolver(newLeadSchema),
+    mode: 'onBlur',
+    reValidateMode: 'onBlur',
+    defaultValues: { name: '', email: '' },
+  });
 
   useEffect(() => {
     (async () => {
@@ -171,26 +237,14 @@ export default function ProjectWizard() {
     []
   );
 
-  const validateStep1 = () => {
-    const errors: string[] = [];
-    if (!name.trim()) errors.push('Project name is required');
-    if (!programLead.trim()) errors.push('Program lead is required');
-    if (!startDate) errors.push('Start date is required');
-    if (!endDate) errors.push('End date is required');
-    if (startDate && endDate && new Date(startDate) >= new Date(endDate)) errors.push('End date must be after start date');
-    if (!generalCat) errors.push('General category is required');
-    if (!specificCat) errors.push('Specific category is required');
-    if (!description.trim()) errors.push('Description is required');
-    if (!expectedUsers || parseInt(expectedUsers) <= 0) errors.push('Expected users must be a positive number');
-    setStep1Errors(errors);
-    return errors.length === 0;
-  };
-
   const validateStep2 = () => {
+    setStep2Submitted(true);
     const errors: string[] = [];
+    const fieldErrs: NonNullable<typeof step2FieldErrors> = { bySO: {} };
     if (strategicObjectives.length === 0) {
       errors.push('At least 1 Strategic Objective is required');
-      setStep2Errors(errors);
+      fieldErrs.global = 'At least 1 Strategic Objective is required';
+      setStep2FieldErrors(fieldErrs);
       return false;
     }
     for (let si = 0; si < strategicObjectives.length; si++) {
@@ -199,6 +253,7 @@ export default function ProjectWizard() {
       if (so.outcomeRows.length === 0) {
         const soData = STRATEGIC_OBJECTIVES_DATA.find(s => s.id === so.name);
         errors.push(`"${soData?.label || `Objective ${si + 1}`}": At least 1 Outcome is required`);
+        fieldErrs.bySO![so.uid] = { ...(fieldErrs.bySO![so.uid] || {}), global: 'At least 1 Outcome is required' };
       } else {
         // Check duplicate outcomes
         const outcomeIds = so.outcomeRows.map(r => r.outcomeId).filter(Boolean);
@@ -209,9 +264,17 @@ export default function ProjectWizard() {
         }
         for (let ri = 0; ri < so.outcomeRows.length; ri++) {
           const row = so.outcomeRows[ri];
-          if (!row.outcomeId) errors.push(`Objective ${si + 1}, Row ${ri + 1}: Outcome must be selected`);
+          if (!row.outcomeId) {
+            errors.push(`Objective ${si + 1}, Row ${ri + 1}: Outcome must be selected`);
+            fieldErrs.bySO![so.uid] = fieldErrs.bySO![so.uid] || { byRow: {} };
+            fieldErrs.bySO![so.uid]!.byRow = fieldErrs.bySO![so.uid]!.byRow || {};
+            fieldErrs.bySO![so.uid]!.byRow![row.uid] = { ...(fieldErrs.bySO![so.uid]!.byRow![row.uid] || {}), outcome: 'Outcome is required' };
+          }
           if (row.indicatorIds.length === 0) {
             errors.push(`Objective ${si + 1}, Outcome ${row.outcomeId || ri + 1}: At least 1 Indicator is required`);
+            fieldErrs.bySO![so.uid] = fieldErrs.bySO![so.uid] || { byRow: {} };
+            fieldErrs.bySO![so.uid]!.byRow = fieldErrs.bySO![so.uid]!.byRow || {};
+            fieldErrs.bySO![so.uid]!.byRow![row.uid] = { ...(fieldErrs.bySO![so.uid]!.byRow![row.uid] || {}), indicators: 'Select at least 1 indicator' };
           }
           const dupInds = row.indicatorIds.filter((id, i) => row.indicatorIds.indexOf(id) !== i);
           if (dupInds.length > 0) {
@@ -220,14 +283,20 @@ export default function ProjectWizard() {
         }
       }
     }
-    setStep2Errors(errors);
+    setStep2FieldErrors(fieldErrs);
     return errors.length === 0;
   };
 
-  const handleNext = () => {
-    if (step === 0 && !validateStep1()) return;
+  const handleNext = async () => {
+    if (step === 0) {
+      const ok = await detailsForm.trigger(undefined, { shouldFocus: true });
+      if (!ok) return;
+    }
     if (step === 1 && !validateStep2()) return;
-    if (step === 2 && selectedLeads.length === 0) return;
+    if (step === 2) {
+      setStep3Submitted(true);
+      if (selectedLeads.length === 0) return;
+    }
     setStep(s => Math.min(s + 1, 3));
   };
 
@@ -268,18 +337,19 @@ export default function ProjectWizard() {
     const objectives = buildObjectives();
     setSaving(true);
     try {
+      const details = detailsForm.getValues();
       const created = await apiCreateProject({
-        name,
-        description,
-        category: generalCat,
-        programLead,
-        projectSupport,
-        generalCategory: generalCat,
-        specificCategory: specificCat,
-        expectedUsers: parseInt(expectedUsers) || 0,
-        startDate,
-        endDate,
-        reportingInterval: interval,
+        name: details.name,
+        description: details.description,
+        category: details.generalCat,
+        programLead: details.programLead,
+        projectSupport: details.projectSupport,
+        generalCategory: details.generalCat,
+        specificCategory: details.specificCat,
+        expectedUsers: typeof details.expectedUsers === 'number' ? details.expectedUsers : Number(details.expectedUsers) || 0,
+        startDate: details.startDate,
+        endDate: details.endDate,
+        reportingInterval: details.interval,
         leadIds: selectedLeads.map((id) => Number(id)),
         objectives: objectives.map((o) => ({
           name: o.name,
@@ -320,13 +390,13 @@ export default function ProjectWizard() {
         projectLeadId: created.leadId != null ? String(created.leadId) : (selectedLeads[0] ?? ''),
         programLead: created.programLead ?? '',
         projectSupport: created.projectSupport ?? '',
-        startDate,
-        endDate,
-        generalCategory: created.generalCategory ?? generalCat,
-        specificCategory: created.specificCategory ?? specificCat,
-        description: created.description ?? description,
+        startDate: details.startDate,
+        endDate: details.endDate,
+        generalCategory: created.generalCategory ?? details.generalCat,
+        specificCategory: created.specificCategory ?? details.specificCat,
+        description: created.description ?? details.description,
         reportingInterval: created.reportingInterval === 'MONTHLY' ? 'monthly' : 'quarterly',
-        expectedUsers: created.expectedUsers ?? (parseInt(expectedUsers) || 0),
+        expectedUsers: created.expectedUsers ?? (typeof details.expectedUsers === 'number' ? details.expectedUsers : 0),
         // IMPORTANT: use DB-created nested structure so indicator IDs are real numeric IDs
         objectives: mappedObjectives.length > 0 ? mappedObjectives : objectives,
         status: 'active',
@@ -456,65 +526,226 @@ export default function ProjectWizard() {
         {/* Step 1: Project Details */}
         {step === 0 && (
           <div className="space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-              <div className="sm:col-span-2 space-y-2">
-                <Label className="field-label">Project Name *</Label>
-                <Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Digital Infrastructure Assessment" className="h-12 text-[15px]" />
+            <Form {...detailsForm}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                <FormField
+                  control={detailsForm.control}
+                  name="name"
+                  render={({ field, fieldState }) => (
+                    <FormItem className="sm:col-span-2 space-y-2">
+                      <FormLabel className="field-label">Project Name *</FormLabel>
+                      <FormControl>
+                        <div className="relative">
+                          <Input
+                            {...field}
+                            placeholder="e.g. Digital Infrastructure Assessment"
+                            className={cn("h-12 text-[15px] pr-10", fieldState.error && "border-destructive focus-visible:ring-destructive")}
+                          />
+                          {fieldState.error && <AlertCircle className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-destructive" />}
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={detailsForm.control}
+                  name="programLead"
+                  render={({ field, fieldState }) => (
+                    <FormItem className="space-y-2">
+                      <FormLabel className="field-label">Program Lead *</FormLabel>
+                      <FormControl>
+                        <div className="relative">
+                          <Input
+                            {...field}
+                            placeholder="e.g. Dr. Ahmed Hassan"
+                            className={cn("h-12 text-[15px] pr-10", fieldState.error && "border-destructive focus-visible:ring-destructive")}
+                          />
+                          {fieldState.error && <AlertCircle className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-destructive" />}
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={detailsForm.control}
+                  name="projectSupport"
+                  render={({ field }) => (
+                    <FormItem className="space-y-2">
+                      <FormLabel className="field-label">Project Support</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="e.g. Technical Support Unit" className="h-12 text-[15px]" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={detailsForm.control}
+                  name="startDate"
+                  render={({ field, fieldState }) => (
+                    <FormItem className="space-y-2">
+                      <FormLabel className="field-label">Start Date *</FormLabel>
+                      <FormControl>
+                        <div className="relative">
+                          <Input
+                            {...field}
+                            type="date"
+                            className={cn("h-12 text-[15px] pr-10", fieldState.error && "border-destructive focus-visible:ring-destructive")}
+                          />
+                          {fieldState.error && <AlertCircle className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-destructive" />}
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={detailsForm.control}
+                  name="endDate"
+                  render={({ field, fieldState }) => (
+                    <FormItem className="space-y-2">
+                      <FormLabel className="field-label">End Date *</FormLabel>
+                      <FormControl>
+                        <div className="relative">
+                          <Input
+                            {...field}
+                            type="date"
+                            className={cn("h-12 text-[15px] pr-10", fieldState.error && "border-destructive focus-visible:ring-destructive")}
+                          />
+                          {fieldState.error && <AlertCircle className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-destructive" />}
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={detailsForm.control}
+                  name="generalCat"
+                  render={({ field, fieldState }) => (
+                    <FormItem className="space-y-2">
+                      <FormLabel className="field-label">General Category *</FormLabel>
+                      <FormControl>
+                        <div className="relative">
+                          <Select
+                            value={field.value}
+                            onValueChange={(v) => {
+                              field.onChange(v);
+                              detailsForm.setValue('specificCat', '', { shouldDirty: true, shouldValidate: true });
+                            }}
+                          >
+                            <SelectTrigger className={cn("h-12 text-[15px] pr-10", fieldState.error && "border-destructive ring-destructive")}>
+                              <SelectValue placeholder="Select category" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {generalCategoryOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                          {fieldState.error && <AlertCircle className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-destructive pointer-events-none" />}
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={detailsForm.control}
+                  name="specificCat"
+                  render={({ field, fieldState }) => (
+                    <FormItem className="space-y-2">
+                      <FormLabel className="field-label">Specific Category *</FormLabel>
+                      <FormControl>
+                        <div className="relative">
+                          <Select value={field.value} onValueChange={field.onChange} disabled={!detailsForm.getValues('generalCat')}>
+                            <SelectTrigger className={cn("h-12 text-[15px] pr-10", fieldState.error && "border-destructive ring-destructive")}>
+                              <SelectValue placeholder="Select specific" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {specificCategoryOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                          {fieldState.error && <AlertCircle className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-destructive pointer-events-none" />}
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={detailsForm.control}
+                  name="interval"
+                  render={({ field }) => (
+                    <FormItem className="space-y-2">
+                      <FormLabel className="field-label">Reporting Interval *</FormLabel>
+                      <FormControl>
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <SelectTrigger className="h-12 text-[15px]"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="quarterly">Quarterly</SelectItem>
+                            <SelectItem value="monthly">Monthly</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={detailsForm.control}
+                  name="expectedUsers"
+                  render={({ field, fieldState }) => (
+                    <FormItem className="space-y-2">
+                      <FormLabel className="field-label">Expected Users *</FormLabel>
+                      <FormControl>
+                        <div className="relative">
+                          <Input
+                            type="number"
+                            value={String(field.value ?? '')}
+                            onChange={(e) => field.onChange(e.target.value)}
+                            placeholder="e.g. 5000"
+                            className={cn("h-12 text-[15px] pr-10", fieldState.error && "border-destructive focus-visible:ring-destructive")}
+                          />
+                          {fieldState.error && <AlertCircle className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-destructive" />}
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={detailsForm.control}
+                  name="description"
+                  render={({ field, fieldState }) => (
+                    <FormItem className="sm:col-span-2 space-y-2">
+                      <FormLabel className="field-label">Description *</FormLabel>
+                      <FormControl>
+                        <div className="relative">
+                          <Textarea
+                            {...field}
+                            placeholder="Brief project description..."
+                            rows={4}
+                            className={cn("text-[15px] pr-10", fieldState.error && "border-destructive focus-visible:ring-destructive")}
+                          />
+                          {fieldState.error && <AlertCircle className="absolute right-3 top-4 h-4 w-4 text-destructive" />}
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
               </div>
-              <div className="space-y-2">
-                <Label className="field-label">Program Lead *</Label>
-                <Input value={programLead} onChange={e => setProgramLead(e.target.value)} placeholder="e.g. Dr. Ahmed Hassan" className="h-12 text-[15px]" />
-              </div>
-              <div className="space-y-2">
-                <Label className="field-label">Project Support</Label>
-                <Input value={projectSupport} onChange={e => setProjectSupport(e.target.value)} placeholder="e.g. Technical Support Unit" className="h-12 text-[15px]" />
-              </div>
-              <div className="space-y-2">
-                <Label className="field-label">Start Date *</Label>
-                <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="h-12 text-[15px]" />
-              </div>
-              <div className="space-y-2">
-                <Label className="field-label">End Date *</Label>
-                <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="h-12 text-[15px]" />
-              </div>
-              <div className="space-y-2">
-                <Label className="field-label">General Category *</Label>
-                <Select value={generalCat} onValueChange={v => { setGeneralCat(v); setSpecificCat(''); }}>
-                  <SelectTrigger className="h-12 text-[15px]"><SelectValue placeholder="Select category" /></SelectTrigger>
-                  <SelectContent>{generalCategoryOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label className="field-label">Specific Category *</Label>
-                <Select value={specificCat} onValueChange={setSpecificCat} disabled={!generalCat}>
-                  <SelectTrigger className="h-12 text-[15px]"><SelectValue placeholder="Select specific" /></SelectTrigger>
-                  <SelectContent>{specificCategoryOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label className="field-label">Reporting Interval *</Label>
-                <Select value={interval} onValueChange={v => setInterval(v as 'quarterly' | 'monthly')}>
-                  <SelectTrigger className="h-12 text-[15px]"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="quarterly">Quarterly</SelectItem>
-                    <SelectItem value="monthly">Monthly</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label className="field-label">Expected Users *</Label>
-                <Input type="number" value={expectedUsers} onChange={e => setExpectedUsers(e.target.value)} placeholder="e.g. 5000" className="h-12 text-[15px]" />
-              </div>
-              <div className="sm:col-span-2 space-y-2">
-                <Label className="field-label">Description *</Label>
-                <Textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Brief project description..." rows={4} className="text-[15px]" />
-              </div>
-            </div>
-            {step1Errors.length > 0 && (
-              <div className="bg-destructive/6 border border-destructive/15 rounded-xl p-4 space-y-1.5">
-                {step1Errors.map((e, i) => <p key={i} className="text-[13px] text-destructive flex items-center gap-2"><AlertCircle className="h-3.5 w-3.5 shrink-0" />{e}</p>)}
-              </div>
-            )}
+            </Form>
           </div>
         )}
 
@@ -547,6 +778,9 @@ export default function ProjectWizard() {
                 <Target className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
                 <p className="text-[14px] text-muted-foreground font-medium">No strategic objectives yet</p>
                 <p className="text-[13px] text-muted-foreground/70 mt-1">Select an objective from the dropdown above to begin</p>
+                {step2Submitted && step2FieldErrors.global && (
+                  <p className="text-[13px] text-destructive mt-3 font-medium">{step2FieldErrors.global}</p>
+                )}
               </div>
             )}
 
@@ -571,6 +805,14 @@ export default function ProjectWizard() {
                   {/* SO Body */}
                   {so.expanded && (
                     <div className="px-4 pb-4 pt-3 space-y-4 border-t border-border bg-secondary/10">
+                      {step2Submitted && step2FieldErrors.bySO?.[so.uid]?.global && (
+                        <div className="bg-destructive/6 border border-destructive/15 rounded-lg p-3">
+                          <p className="text-[13px] text-destructive flex items-center gap-2">
+                            <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                            {step2FieldErrors.bySO?.[so.uid]?.global}
+                          </p>
+                        </div>
+                      )}
 
                       {/* Outcome Rows */}
                       <div className="space-y-3">
@@ -608,7 +850,12 @@ export default function ProjectWizard() {
                                       <Button
                                         variant="outline"
                                         role="combobox"
-                                        className="w-full h-auto min-h-[36px] justify-between text-sm font-normal text-left whitespace-normal py-2"
+                                        className={cn(
+                                          "w-full h-auto min-h-[36px] justify-between text-sm font-normal text-left whitespace-normal py-2",
+                                          step2Submitted && step2FieldErrors.bySO?.[so.uid]?.byRow?.[row.uid]?.outcome
+                                            ? "border-destructive ring-1 ring-destructive/40"
+                                            : ""
+                                        )}
                                       >
                                         <span className="flex-1 text-left leading-snug">
                                           {row.outcomeId
@@ -660,6 +907,11 @@ export default function ProjectWizard() {
                                       </Command>
                                     </PopoverContent>
                                   </Popover>
+                                  {step2Submitted && step2FieldErrors.bySO?.[so.uid]?.byRow?.[row.uid]?.outcome && (
+                                    <p className="text-[12px] text-destructive">
+                                      {step2FieldErrors.bySO?.[so.uid]?.byRow?.[row.uid]?.outcome}
+                                    </p>
+                                  )}
                                 </div>
                                 <button onClick={() => removeOutcomeRow(so.uid, row.uid)} className="text-muted-foreground hover:text-destructive p-1 mt-1 transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
                               </div>
@@ -716,6 +968,12 @@ export default function ProjectWizard() {
                                     })}
                                   </div>
                                 )}
+
+                                {step2Submitted && step2FieldErrors.bySO?.[so.uid]?.byRow?.[row.uid]?.indicators && (
+                                  <p className="text-[12px] text-destructive">
+                                    {step2FieldErrors.bySO?.[so.uid]?.byRow?.[row.uid]?.indicators}
+                                  </p>
+                                )}
                               </div>
                             </div>
                           );
@@ -726,12 +984,6 @@ export default function ProjectWizard() {
                 </div>
               ))}
             </div>
-
-            {step2Errors.length > 0 && (
-              <div className="bg-destructive/6 border border-destructive/15 rounded-xl p-4 space-y-1.5">
-                {step2Errors.map((e, i) => <p key={i} className="text-[13px] text-destructive flex items-center gap-2"><AlertCircle className="h-3.5 w-3.5 shrink-0" />{e}</p>)}
-              </div>
-            )}
           </div>
         )}
 
@@ -748,8 +1000,7 @@ export default function ProjectWizard() {
                 size="sm"
                 className="h-9 text-[13px]"
                 onClick={() => {
-                  setNewLeadName('');
-                  setNewLeadEmail('');
+                  newLeadForm.reset({ name: '', email: '' });
                   setLeadDialogOpen(true);
                 }}
               >
@@ -785,7 +1036,9 @@ export default function ProjectWizard() {
                 </div>
               ))}
             </div>
-            {selectedLeads.length === 0 && <p className="text-[13px] text-muted-foreground">* At least one lead is required</p>}
+            {step3Submitted && selectedLeads.length === 0 && (
+              <p className="text-[13px] text-destructive font-medium">At least one lead is required</p>
+            )}
 
             <Dialog open={leadDialogOpen} onOpenChange={setLeadDialogOpen}>
               <DialogContent className="sm:max-w-[420px] rounded-2xl">
@@ -795,44 +1048,15 @@ export default function ProjectWizard() {
                     Create a new user with the Project Lead role. An invitation email will be sent automatically.
                   </DialogDescription>
                 </DialogHeader>
-                <div className="space-y-4 py-2">
-                  <div className="space-y-1.5">
-                    <Label className="field-label">Full Name</Label>
-                    <Input
-                      value={newLeadName}
-                      onChange={(e) => setNewLeadName(e.target.value)}
-                      placeholder="e.g. James Wilson"
-                      className="h-10 text-[14px]"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="field-label">Email Address</Label>
-                    <Input
-                      type="email"
-                      value={newLeadEmail}
-                      onChange={(e) => setNewLeadEmail(e.target.value)}
-                      placeholder="lead@example.org"
-                      className="h-10 text-[14px]"
-                    />
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button variant="outline" className="h-10" onClick={() => setLeadDialogOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button
-                    className="h-10"
-                    disabled={creatingLead}
-                    onClick={async () => {
-                      if (!newLeadName.trim() || !newLeadEmail.trim()) {
-                        toast({ title: 'Name and email are required', variant: 'destructive' });
-                        return;
-                      }
+                <Form {...newLeadForm}>
+                  <form
+                    onSubmit={newLeadForm.handleSubmit(async (values) => {
+                      if (creatingLead) return;
                       setCreatingLead(true);
                       try {
                         const created = await apiCreateUser({
-                          name: newLeadName.trim(),
-                          email: newLeadEmail.trim().toLowerCase(),
+                          name: values.name.trim(),
+                          email: values.email.trim().toLowerCase(),
                           role: "PROJECT_LEAD",
                         });
                         const mapped = {
@@ -857,11 +1081,65 @@ export default function ProjectWizard() {
                       } finally {
                         setCreatingLead(false);
                       }
-                    }}
+                    })}
                   >
-                    {creatingLead ? 'Creating...' : 'Create & Invite'}
-                  </Button>
-                </DialogFooter>
+                    <div className="space-y-4 py-2">
+                      <FormField
+                        control={newLeadForm.control}
+                        name="name"
+                        render={({ field, fieldState }) => (
+                          <FormItem className="space-y-1.5">
+                            <FormLabel className="field-label">Full Name</FormLabel>
+                            <FormControl>
+                              <div className="relative">
+                                <Input
+                                  {...field}
+                                  placeholder="e.g. James Wilson"
+                                  className={cn("h-10 text-[14px] pr-10", fieldState.error && "border-destructive focus-visible:ring-destructive")}
+                                  disabled={creatingLead}
+                                />
+                                {fieldState.error && <AlertCircle className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-destructive" />}
+                              </div>
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={newLeadForm.control}
+                        name="email"
+                        render={({ field, fieldState }) => (
+                          <FormItem className="space-y-1.5">
+                            <FormLabel className="field-label">Email Address</FormLabel>
+                            <FormControl>
+                              <div className="relative">
+                                <Input
+                                  {...field}
+                                  type="email"
+                                  placeholder="lead@example.org"
+                                  className={cn("h-10 text-[14px] pr-10", fieldState.error && "border-destructive focus-visible:ring-destructive")}
+                                  disabled={creatingLead}
+                                />
+                                {fieldState.error && <AlertCircle className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-destructive" />}
+                              </div>
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    <DialogFooter>
+                      <Button variant="outline" className="h-10" type="button" disabled={creatingLead} onClick={() => setLeadDialogOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button className="h-10" type="submit" disabled={creatingLead}>
+                        {creatingLead ? 'Creating...' : 'Create & Invite'}
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </Form>
               </DialogContent>
             </Dialog>
           </div>

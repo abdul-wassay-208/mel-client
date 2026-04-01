@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
+import { Pagination } from '@/components/Pagination';
 
 export default function LeadDashboard() {
   const { user } = useAuth();
@@ -23,6 +24,10 @@ export default function LeadDashboard() {
   const activeProjects = myProjects.filter(p => p.status === 'active');
   const allReports = myProjects.flatMap(p => p.reports);
   const drafts = allReports.filter(r => r.state === 'draft');
+  const [projectsPage, setProjectsPage] = useState(1);
+  const projectsPerPage = 5;
+  const totalProjectPages = Math.max(1, Math.ceil(myProjects.length / projectsPerPage));
+  const paginatedProjects = myProjects.slice((projectsPage - 1) * projectsPerPage, projectsPage * projectsPerPage);
 
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [createForProject, setCreateForProject] = useState<string | null>(null);
@@ -81,7 +86,7 @@ export default function LeadDashboard() {
       </div>
 
       <div className="space-y-5 animate-in-delay-2">
-        {myProjects.map(project => (
+        {paginatedProjects.map(project => (
           <div key={project.id} className="card-elevated p-6">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0 flex-1">
@@ -164,6 +169,10 @@ export default function LeadDashboard() {
           </div>
         )}
       </div>
+
+      {myProjects.length > 0 && (
+        <Pagination page={projectsPage} totalPages={totalProjectPages} onPageChange={setProjectsPage} className="animate-in-delay-2" />
+      )}
 
       {/* Create Report Dialog */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>

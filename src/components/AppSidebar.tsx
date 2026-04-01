@@ -90,12 +90,11 @@ export function AppSidebar() {
       {/* User footer */}
       <div className="mt-auto p-4 border-t border-sidebar-border">
         <div className="flex items-center gap-3 mb-3 px-2">
-          <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary text-[12px] font-semibold">
-            {user?.name.split(' ').map(n => n[0]).join('')}
-          </div>
           <div className="flex-1 min-w-0">
             <p className="text-[13px] font-medium truncate">{user?.name}</p>
-            <p className="text-[11px] text-muted-foreground truncate">{user?.email}</p>
+            <p className="text-[11px] text-muted-foreground truncate">
+              {isSuperAdmin ? 'Super Admin' : user?.role === 'admin' ? 'Admin' : 'Project Lead'}
+            </p>
           </div>
         </div>
         <button

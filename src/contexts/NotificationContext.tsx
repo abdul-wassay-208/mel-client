@@ -17,6 +17,7 @@ import {
   apiMarkNotificationRead,
   apiMarkAllNotificationsRead,
 } from '@/lib/api';
+import { getErrorMessage } from '@/lib/errors';
 
 // Derive the socket root URL from the API base (strip trailing /api)
 const SOCKET_URL = (
@@ -38,7 +39,9 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<BackendNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [isMarkingAll, setIsMarkingAll] = useState(false);
   const socketRef = useRef<Socket | null>(null);
+  const markingOneRef = useRef<Set<string>>(new Set());
 
   const fetchAll = useCallback(async () => {
     setIsLoading(true);
@@ -51,6 +54,9 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       setUnreadCount(countData.count);
     } catch (err) {
       console.error('[notifications] fetch error:', err);
+      toast.error('Failed to load notifications', {
+        description: getErrorMessage(err),
+      });
     } finally {
       setIsLoading(false);
     }
@@ -107,6 +113,9 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
   const markOneRead = useCallback(
     async (id: string | number) => {
+      const key = String(id);
+      if (markingOneRef.current.has(key)) return;
+      markingOneRef.current.add(key);
       // Optimistic update
       setNotifications((prev) =>
         prev.map((n) => (String(n.id) === String(id) ? { ...n, isRead: true } : n))
@@ -117,13 +126,18 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         // Server will emit notification:unread-count; we've already updated optimistically
       } catch (err) {
         console.error('[notifications] markOneRead error:', err);
+        toast.error('Failed to mark as read', { description: getErrorMessage(err) });
         fetchAll(); // revert to server truth
+      } finally {
+        markingOneRef.current.delete(key);
       }
     },
     [fetchAll]
   );
 
   const markAllRead = useCallback(async () => {
+    if (isMarkingAll) return;
+    setIsMarkingAll(true);
     // Optimistic update
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
     setUnreadCount(0);
@@ -131,13 +145,16 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       await apiMarkAllNotificationsRead();
     } catch (err) {
       console.error('[notifications] markAllRead error:', err);
+      toast.error('Failed to mark all as read', { description: getErrorMessage(err) });
       fetchAll(); // revert to server truth
+    } finally {
+      setIsMarkingAll(false);
     }
   }, [fetchAll]);
 
   return (
     <NotificationContext.Provider
-      value={{ notifications, unreadCount, isLoading, markOneRead, markAllRead }}
+      value={{ notifications, unreadCount, isLoading: isLoading || isMarkingAll, markOneRead, markAllRead }}
     >
       {children}
     </NotificationContext.Provider>

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNotifications } from '@/contexts/NotificationContext';
 import { Button } from '@/components/ui/button';
 import { Bell, Check, CheckCheck, Mail, AlertTriangle, Loader2 } from 'lucide-react';
@@ -12,6 +13,8 @@ const typeIcons: Record<string, typeof Bell> = {
 
 export default function Notifications() {
   const { notifications, unreadCount, isLoading, markOneRead, markAllRead } = useNotifications();
+  // Local UI guard to prevent rapid double-click; backend/context also guards.
+  const [markingAll, setMarkingAll] = useState(false);
 
   const sorted = [...notifications].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
@@ -30,10 +33,19 @@ export default function Notifications() {
           <Button
             variant="outline"
             className="h-9 text-[13px]"
-            onClick={markAllRead}
+            disabled={isLoading || markingAll}
+            onClick={async () => {
+              if (markingAll) return;
+              setMarkingAll(true);
+              try {
+                await markAllRead();
+              } finally {
+                setMarkingAll(false);
+              }
+            }}
           >
             <CheckCheck className="h-3.5 w-3.5 mr-1.5" />
-            Mark all as read
+            {markingAll ? 'Marking…' : 'Mark all as read'}
           </Button>
         )}
       </div>

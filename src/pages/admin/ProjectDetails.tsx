@@ -7,6 +7,8 @@ import { useEffect, useState } from 'react';
 import { apiGetProject, apiGetUsers, apiAssignProjectLeads, ApiUserRecord } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { getErrorMessage } from '@/lib/errors';
+import { useAsyncAction } from '@/hooks/useAsyncAction';
 
 export default function ProjectDetails() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -22,14 +24,14 @@ export default function ProjectDetails() {
   const [deleting, setDeleting] = useState(false);
   const [showEditLeadsDialog, setShowEditLeadsDialog] = useState(false);
   const [savingLeads, setSavingLeads] = useState(false);
+  const loadAction = useAsyncAction();
   const [allLeads, setAllLeads] = useState<{ id: string; name: string; email: string }[]>([]);
   const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
 
   useEffect(() => {
     (async () => {
-      try {
-        if (!project) return;
-
+      if (!project) return;
+      await loadAction.run(async () => {
         // Prefer backend project payload (has multi-lead assignments).
         const apiProject = await apiGetProject(project.id);
         setLiveReports(apiProject.reports ?? []);
@@ -47,7 +49,6 @@ export default function ProjectDetails() {
           .map((u: any) => ({ id: String(u.id), name: u.name, email: u.email }));
 
         if (fromEmbedded.length > 0) {
-          // Ensure stable ordering and de-dupe
           const byId = new Map(fromEmbedded.map((u: any) => [u.id, u]));
           setDisplayLeads(assignedIds.map((id) => byId.get(id)).filter(Boolean) as any);
           return;
@@ -60,9 +61,9 @@ export default function ProjectDetails() {
           .filter(Boolean)
           .map((u: any) => ({ id: String(u.id), name: u.name, email: u.email }));
         setDisplayLeads(mapped);
-      } catch (err) {
-        console.error(err);
-      }
+      }, {
+        error: { title: 'Failed to load project details', description: 'Please refresh and try again.' },
+      });
     })();
   }, [project]);
 
@@ -92,7 +93,7 @@ export default function ProjectDetails() {
         setSelectedLeadIds(assigned);
       } catch (err: any) {
         console.error(err);
-        toast({ title: 'Failed to load leads', description: err?.message || 'Unknown error', variant: 'destructive' });
+        toast({ title: 'Failed to load leads', description: getErrorMessage(err), variant: 'destructive' });
       }
     })();
   }, [showEditLeadsDialog, project, toast]);

@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useState } from 'react';
+import { Pagination } from '@/components/Pagination';
 
 export default function AdminDashboard() {
   const { projects, editRequests, completeProject } = useApp();
@@ -16,6 +17,8 @@ export default function AdminDashboard() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [completeDialogProject, setCompleteDialogProject] = useState<string | null>(null);
+  const [projectsPage, setProjectsPage] = useState(1);
+  const projectsPerPage = 8;
 
   const activeProjects = projects.filter(p => p.status === 'active');
   const completedProjects = projects.filter(p => p.status === 'completed');
@@ -23,6 +26,8 @@ export default function AdminDashboard() {
   const draftReports = allReports.filter(r => r.state === 'draft');
   const publishedReports = allReports.filter(r => r.state === 'published' || r.state === 're_published');
   const pendingEdits = editRequests.filter(r => r.status === 'pending');
+  const totalProjectPages = Math.max(1, Math.ceil(projects.length / projectsPerPage));
+  const paginatedProjects = projects.slice((projectsPage - 1) * projectsPerPage, projectsPage * projectsPerPage);
 
   const handleCompleteProject = (projectId: string) => {
     completeProject(projectId);
@@ -53,7 +58,7 @@ export default function AdminDashboard() {
             <span className="text-[13px] text-muted-foreground">{projects.length} total</span>
           </div>
           <div className="divide-y divide-border">
-            {projects.map(project => (
+            {paginatedProjects.map(project => (
               <div
                 key={project.id}
                 className="px-6 py-4 flex items-center justify-between hover:bg-secondary/30 transition-all duration-150 cursor-pointer group"
@@ -81,6 +86,9 @@ export default function AdminDashboard() {
                 </div>
               </div>
             ))}
+          </div>
+          <div className="px-6 pb-4">
+            <Pagination page={projectsPage} totalPages={totalProjectPages} onPageChange={setProjectsPage} />
           </div>
         </div>
 
