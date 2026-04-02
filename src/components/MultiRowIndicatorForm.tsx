@@ -19,6 +19,15 @@ interface MultiRowIndicatorFormProps {
   rows: IndicatorEntryRow[];
   onChange: (rows: IndicatorEntryRow[]) => void;
   disabled?: boolean;
+  /**
+   * Field keys that must stay read-only even if the report is editable.
+   * Used for "edit request" approvals where only specific fields are allowed to change.
+   */
+  disabledFields?: string[];
+  /**
+   * Hide/disable row actions (duplicate/remove/add row) while still allowing field edits.
+   */
+  disableActions?: boolean;
   validationErrors?: Record<string, string[]>; // rowId -> error messages
 }
 
@@ -97,10 +106,13 @@ function MultiRowIndicatorForm({
   rows,
   onChange,
   disabled = false,
+  disabledFields = [],
+  disableActions = false,
   validationErrors = {},
 }: MultiRowIndicatorFormProps) {
   const [highlightedRow, setHighlightedRow] = useState<string | null>(null);
   const [labelOverrides, setLabelOverrides] = useState<Record<string, string> | null>(null);
+  const disabledFieldSet = useMemo(() => new Set(disabledFields), [disabledFields]);
 
   useEffect(() => {
     let alive = true;
@@ -180,7 +192,7 @@ function MultiRowIndicatorForm({
                     {fieldLabel(f)} {f.required && <span className="text-destructive">*</span>}
                   </TableHead>
                 ))}
-                {!disabled && (
+                {!disabled && !disableActions && (
                   <TableHead className="text-[12px] font-semibold uppercase tracking-wider w-24 text-center">Action</TableHead>
                 )}
               </TableRow>
@@ -204,13 +216,13 @@ function MultiRowIndicatorForm({
                             field={{ ...field, label: effectiveLabel }}
                             value={row[field.key]}
                             onChange={v => updateRowField(row.id, field.key, v)}
-                            disabled={disabled}
+                            disabled={disabled || disabledFieldSet.has(field.key)}
                             hasError={!!fieldHasError}
                           />
                         </TableCell>
                       );
                     })}
-                    {!disabled && (
+                    {!disabled && !disableActions && (
                       <TableCell className="text-center py-2">
                         <div className="flex items-center justify-center gap-1">
                           <Tooltip>
@@ -267,7 +279,7 @@ function MultiRowIndicatorForm({
           </div>
         )}
 
-        {!disabled && (
+        {!disabled && !disableActions && (
           <Button
             variant="outline"
             size="sm"

@@ -3,7 +3,7 @@ import { useApp } from '@/contexts/AppContext';
 import { StatCard } from '@/components/StatCard';
 import { StatusBadge, ProjectStatusBadge } from '@/components/StatusBadge';
 import { FolderOpen, FileText, Plus, ArrowRight, Calendar, Clock } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -13,11 +13,13 @@ import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { Pagination } from '@/components/Pagination';
+import { cn } from '@/lib/utils';
 
 export default function LeadDashboard() {
   const { user } = useAuth();
   const { getProjectsForLead, createReportCycle } = useApp();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
 
   const myProjects = getProjectsForLead(user!.id);
@@ -28,6 +30,32 @@ export default function LeadDashboard() {
   const projectsPerPage = 5;
   const totalProjectPages = Math.max(1, Math.ceil(myProjects.length / projectsPerPage));
   const paginatedProjects = myProjects.slice((projectsPage - 1) * projectsPerPage, projectsPage * projectsPerPage);
+  const [highlightProjectId, setHighlightProjectId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const projectId = searchParams.get('projectId');
+    if (!projectId) return;
+
+    // Move pagination to page containing the project (if present)
+    const idx = myProjects.findIndex((p) => String(p.id) === String(projectId));
+    if (idx >= 0) {
+      const page = Math.floor(idx / projectsPerPage) + 1;
+      setProjectsPage(page);
+      setHighlightProjectId(String(projectId));
+      setTimeout(() => setHighlightProjectId(null), 3500);
+      setTimeout(() => {
+        const el = document.getElementById(`project-card-${projectId}`);
+        el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 50);
+    }
+
+    // clean URL
+    setTimeout(() => setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('projectId');
+      return next;
+    }, { replace: true }), 500);
+  }, [myProjects, projectsPerPage, searchParams, setSearchParams]);
 
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [createForProject, setCreateForProject] = useState<string | null>(null);
@@ -87,7 +115,14 @@ export default function LeadDashboard() {
 
       <div className="space-y-5 animate-in-delay-2">
         {paginatedProjects.map(project => (
-          <div key={project.id} className="card-elevated p-6">
+          <div
+            key={project.id}
+            id={`project-card-${project.id}`}
+            className={cn(
+              "card-elevated p-6 transition-shadow",
+              highlightProjectId === String(project.id) ? "ring-2 ring-primary shadow-lg" : ""
+            )}
+          >
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-3">

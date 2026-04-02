@@ -1,6 +1,16 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
 import { Project, EditRequest, AuditLogEntry, Report, DisaggregatedData, ECONOMY_OPTIONS, INFRASTRUCTURE_OPTIONS } from '@/types';
-import { apiGetProjects, ApiProject, apiCreateReport, ApiReport, apiChangeReportStatus, apiDeleteProject } from '@/lib/api';
+import {
+  apiGetProjects,
+  ApiProject,
+  apiCreateReport,
+  ApiReport,
+  apiChangeReportStatus,
+  apiDeleteProject,
+  apiGetEditRequests,
+  apiCreateEditRequest,
+  apiUpdateEditRequestStatus,
+} from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface AppContextType {
@@ -65,8 +75,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         SUBMITTED: 'draft',
         PUBLISHED: 'published',
         EDIT_REQUESTED: 'edit_requested',
-        UNLOCKED: 'unlocked',
-        RE_PUBLISHED: 're_published',
+        UNDER_REVIEW: 'unlocked', // used as "unlocked for edits" (no DB migration)
       };
 
       const data: DisaggregatedData[] = (r.disaggregatedData ?? []).map((row: any) => ({
@@ -128,10 +137,45 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const refreshProjects = useCallback(async () => {
     if (!user) {
       setProjects([]);
+      setEditRequests([]);
       return;
     }
     const apiProjects = await apiGetProjects();
     setProjects(apiProjects.map(mapApiProjectToProject));
+
+    try {
+      const reqs = await apiGetEditRequests();
+      setEditRequests(
+        reqs.map((r) => {
+          let fields: string[] = [];
+          try {
+            fields = JSON.parse(r.fieldsToEdit || '[]');
+          } catch {
+            fields = [];
+          }
+          return {
+            id: String(r.id),
+            projectId: String(r.projectId),
+            reportId: String(r.reportId),
+            indicatorId: String(r.indicatorId),
+            indicatorName: r.indicatorName,
+            fieldsToEdit: fields,
+            reason: r.reason,
+            status: r.status === 'APPROVED' ? 'approved' : r.status === 'REJECTED' ? 'rejected' : 'pending',
+            requestedBy: String(r.requestedById),
+            requestedByName: r.requestedByName,
+            projectName: r.projectName,
+            requestedAt: r.requestedAt,
+            resolvedAt: r.resolvedAt ?? undefined,
+            resolvedBy: r.resolvedById != null ? String(r.resolvedById) : undefined,
+          } as EditRequest;
+        })
+      );
+    } catch (e) {
+      // Keep projects working even if edit-requests endpoint isn't reachable
+      console.error(e);
+      setEditRequests([]);
+    }
   }, [user, mapApiProjectToProject]);
 
   useEffect(() => {
@@ -288,49 +332,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [addAuditEntry]
   );
 
-  const requestEdit = useCallback((req: Omit<EditRequest, 'id' | 'status' | 'requestedAt'>) => {
-    const newReq: EditRequest = { ...req, id: `er${Date.now()}`, status: 'pending', requestedAt: new Date().toISOString() };
-    setEditRequests(prev => [...prev, newReq]);
-    setProjects(prev => prev.map(p =>
-      p.id === req.projectId ? {
-        ...p,
-        reports: p.reports.map(r => r.id === req.reportId ? { ...r, state: 'edit_requested' as const } : r),
-      } : p
-    ));
-    addAuditEntry({ userId: req.requestedBy, userName: req.requestedByName, action: 'Requested Edit', entityType: 'EditRequest', entityId: newReq.id });
-  }, [addAuditEntry]);
+  const requestEdit = useCallback(async (req: Omit<EditRequest, 'id' | 'status' | 'requestedAt'>) => {
+    const created = await apiCreateEditRequest({
+      projectId: Number(req.projectId),
+      reportId: Number(req.reportId),
+      indicatorId: Number(req.indicatorId),
+      projectName: req.projectName,
+      indicatorName: req.indicatorName,
+      fieldsToEdit: req.fieldsToEdit,
+      reason: req.reason,
+    });
 
-  const approveEditRequest = useCallback((requestId: string, adminId: string) => {
-    setEditRequests(prev => prev.map(r =>
-      r.id === requestId ? { ...r, status: 'approved' as const, resolvedAt: new Date().toISOString(), resolvedBy: adminId } : r
-    ));
-    const req = editRequests.find(r => r.id === requestId);
-    if (req) {
-      setProjects(prev => prev.map(p =>
-        p.id === req.projectId ? {
-          ...p,
-          reports: p.reports.map(r => r.id === req.reportId ? { ...r, state: 'unlocked' as const } : r),
-        } : p
-      ));
-    }
+    // Refresh lists to sync report status + requests
+    await refreshProjects();
+    addAuditEntry({ userId: req.requestedBy, userName: req.requestedByName, action: 'Requested Edit', entityType: 'EditRequest', entityId: String(created.id) });
+  }, [addAuditEntry, refreshProjects]);
+
+  const approveEditRequest = useCallback(async (requestId: string, adminId: string) => {
+    await apiUpdateEditRequestStatus(requestId, "APPROVED");
+    await refreshProjects();
     addAuditEntry({ userId: adminId, userName: '', action: 'Approved Edit Request', entityType: 'EditRequest', entityId: requestId });
-  }, [editRequests, addAuditEntry]);
+  }, [addAuditEntry, refreshProjects]);
 
-  const rejectEditRequest = useCallback((requestId: string, adminId: string) => {
-    setEditRequests(prev => prev.map(r =>
-      r.id === requestId ? { ...r, status: 'rejected' as const, resolvedAt: new Date().toISOString(), resolvedBy: adminId } : r
-    ));
-    const req = editRequests.find(r => r.id === requestId);
-    if (req) {
-      setProjects(prev => prev.map(p =>
-        p.id === req.projectId ? {
-          ...p,
-          reports: p.reports.map(r => r.id === req.reportId ? { ...r, state: 'published' as const } : r),
-        } : p
-      ));
-    }
+  const rejectEditRequest = useCallback(async (requestId: string, adminId: string) => {
+    await apiUpdateEditRequestStatus(requestId, "REJECTED");
+    await refreshProjects();
     addAuditEntry({ userId: adminId, userName: '', action: 'Rejected Edit Request', entityType: 'EditRequest', entityId: requestId });
-  }, [editRequests, addAuditEntry]);
+  }, [addAuditEntry, refreshProjects]);
 
   const completeProject = useCallback((projectId: string) => {
     setProjects(prev => prev.map(p =>

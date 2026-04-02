@@ -160,7 +160,8 @@ export default function Login() {
               </Form>
 
               <button
-                onClick={() => setShowForgot(true)}
+                type="button"
+                onClick={() => navigate('/forgot-password')}
                 className="text-[13px] text-primary hover:text-primary/80 mt-5 block text-center w-full transition-colors"
               >
                 Forgot your password?

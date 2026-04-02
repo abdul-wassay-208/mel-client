@@ -112,6 +112,65 @@ export async function apiAcceptInvite(
   });
 }
 
+export async function apiForgotPassword(email: string): Promise<{ ok: boolean; email?: any }> {
+  return request<{ ok: boolean; email?: any }>(`/auth/forgot-password`, {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+export async function apiResetPassword(token: string, password: string): Promise<{ ok: boolean }> {
+  return request<{ ok: boolean }>(`/auth/reset-password`, {
+    method: "POST",
+    body: JSON.stringify({ token, password }),
+  });
+}
+
+// ── Edit Requests ────────────────────────────────────────────────────────────
+
+export type ApiEditRequest = {
+  id: number;
+  projectId: number;
+  reportId: number;
+  indicatorId: number;
+  projectName: string;
+  indicatorName: string;
+  fieldsToEdit: string; // JSON string in DB
+  reason: string;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  requestedById: number;
+  requestedByName: string;
+  requestedAt: string;
+  resolvedAt?: string | null;
+  resolvedById?: number | null;
+};
+
+export async function apiGetEditRequests(): Promise<ApiEditRequest[]> {
+  return request<ApiEditRequest[]>(`/edit-requests`);
+}
+
+export async function apiCreateEditRequest(payload: {
+  projectId: number;
+  reportId: number;
+  indicatorId: number;
+  projectName: string;
+  indicatorName: string;
+  fieldsToEdit: string[];
+  reason: string;
+}): Promise<ApiEditRequest> {
+  return request<ApiEditRequest>(`/edit-requests`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function apiUpdateEditRequestStatus(id: number | string, status: "APPROVED" | "REJECTED"): Promise<ApiEditRequest> {
+  return request<ApiEditRequest>(`/edit-requests/${id}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+}
+
 // ── App Config (SUPER_ADMIN) ──────────────────────────────────────────────────
 
 export type AppConfigKey = "projectCategories" | "indicatorOverrides" | "melConfigDraft" | "melConfigLive";
@@ -376,6 +435,22 @@ export async function apiSubmitDisaggregatedData(
   payload: ApiDisaggregatedPayload
 ): Promise<void> {
   await request<unknown>("/disaggregated-data", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export interface ApiReplaceDisaggregatedPayload {
+  reportId: number;
+  indicatorId: number;
+  projectId?: number;
+  rows: ApiDisaggregatedPayload[];
+}
+
+export async function apiReplaceDisaggregatedData(
+  payload: ApiReplaceDisaggregatedPayload
+): Promise<void> {
+  await request<unknown>("/disaggregated-data/replace", {
     method: "POST",
     body: JSON.stringify(payload),
   });

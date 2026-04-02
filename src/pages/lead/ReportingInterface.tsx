@@ -13,12 +13,14 @@ import { getIndicatorConfig } from '@/config/indicatorFieldMappings';
 import MultiRowIndicatorForm, { IndicatorEntryRow, validateIndicatorRows } from '@/components/MultiRowIndicatorForm';
 import { Target, TrendingUp, Gauge, ChevronDown, ChevronRight, Check, AlertCircle, Send, FileEdit, ArrowLeft, Save } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { apiSubmitDisaggregatedData, apiGetReport, ApiDisaggregatedRow, apiGetConfig } from '@/lib/api';
+import { apiReplaceDisaggregatedData, apiSubmitDisaggregatedData, apiGetReport, ApiDisaggregatedRow, apiGetConfig } from '@/lib/api';
 import { findMelIndicatorByCode, melIndicatorToIndicatorConfig, type MelConfigPayload } from '@/lib/melConfigLive';
+import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 
 export default function ReportingInterface() {
   const { projectId, reportId } = useParams<{ projectId: string; reportId: string }>();
-  const { getProjectById, updateReportData, publishReport, republishReport, requestEdit } = useApp();
+  const { getProjectById, updateReportData, publishReport, republishReport, requestEdit, editRequests } = useApp();
   const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -36,6 +38,8 @@ export default function ReportingInterface() {
   const [activeIndicator, setActiveIndicator] = useState<string | null>(null);
   const [showPublishDialog, setShowPublishDialog] = useState(false);
   const [showEditRequestDialog, setShowEditRequestDialog] = useState(false);
+  const [showIndicatorPicker, setShowIndicatorPicker] = useState(false);
+  const [indicatorSearch, setIndicatorSearch] = useState('');
   const [editRequestIndicator, setEditRequestIndicator] = useState('');
   const [editRequestFields, setEditRequestFields] = useState<string[]>([]);
   const [editRequestReason, setEditRequestReason] = useState('');
@@ -43,12 +47,20 @@ export default function ReportingInterface() {
   const [melLiveObjectives, setMelLiveObjectives] = useState<MelConfigPayload['objectives'] | null>(null);
   const [savingDraft, setSavingDraft] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [submittingEditRequest, setSubmittingEditRequest] = useState(false);
 
   if (!project || !report) return <div className="p-6">Project or report not found</div>;
 
   const canEdit = report.state === 'draft' || report.state === 'unlocked';
   const canPublish = report.state === 'draft' || report.state === 'unlocked';
-  const canRequestEdit = report.state === 'published' || report.state === 're_published';
+  const canRequestEdit = report.state === 'published';
+
+  // If the admin approved an edit request for this report, the lead should only
+  // be able to edit the requested fields (not the entire row).
+  const approvedEditsForReport = editRequests.filter(
+    (r) => r.reportId === String(report.id) && r.status === 'approved'
+  );
+  const hasApprovedEdits = approvedEditsForReport.length > 0;
 
   useEffect(() => {
     let alive = true;
@@ -206,11 +218,18 @@ export default function ReportingInterface() {
   const validateAll = (): boolean => {
     const allErrors: Record<string, Record<string, string[]>> = {};
     let hasError = false;
+    let firstMissingIndicator: string | null = null;
     allIndicators.forEach(ind => {
       const config = getRuntimeIndicatorConfig(ind.id, ind.name);
       if (!config) return;
       const rows = multiRowData[ind.id] || [];
-      if (rows.length === 0) return;
+      // Require at least one row for every indicator on publish
+      if (rows.length === 0) {
+        allErrors[ind.id] = { __missing__: ['At least one entry is required'] };
+        hasError = true;
+        if (!firstMissingIndicator) firstMissingIndicator = ind.id;
+        return;
+      }
       const rowErrors = validateIndicatorRows(config, rows);
       if (Object.keys(rowErrors).length > 0) {
         allErrors[ind.id] = rowErrors;
@@ -218,6 +237,7 @@ export default function ReportingInterface() {
       }
     });
     setMultiRowErrors(allErrors);
+    if (firstMissingIndicator) setActiveIndicator(firstMissingIndicator);
     return !hasError;
   };
 
@@ -275,10 +295,22 @@ export default function ReportingInterface() {
     const saveData = buildSaveData();
     setPublishing(true);
     try {
+      // Replace disaggregated rows per indicator (prevents "old + new" duplicates like Nepal + China).
+      const grouped = saveData.reduce<Record<string, DisaggregatedData[]>>((acc, d) => {
+        (acc[d.indicatorId] ||= []).push(d);
+        return acc;
+      }, {});
+
       await Promise.all(
-        saveData.map(async (d) => {
-          const payload = toApiPayload(mapRowToPayload(d.indicatorId, d));
-          await apiSubmitDisaggregatedData(payload);
+        Object.entries(grouped).map(async ([indicatorIdStr, rows]) => {
+          const indicatorId = Number(indicatorIdStr);
+          const rowsPayload = rows.map((row) => toApiPayload(mapRowToPayload(indicatorIdStr, row)));
+          await apiReplaceDisaggregatedData({
+            reportId: Number(report.id),
+            projectId: Number(project.id),
+            indicatorId,
+            rows: rowsPayload,
+          });
         })
       );
 
@@ -300,22 +332,32 @@ export default function ReportingInterface() {
     }
   };
 
-  const handleEditRequest = () => {
+  const handleEditRequest = async () => {
     if (!editRequestIndicator || editRequestFields.length === 0 || !editRequestReason.trim()) return;
-    const indicator = allIndicators.find(i => i.id === editRequestIndicator);
-    requestEdit({
-      projectId: project.id, reportId: report.id, indicatorId: editRequestIndicator,
-      indicatorName: indicator?.name || '', fieldsToEdit: editRequestFields, reason: editRequestReason,
-      requestedBy: user!.id, requestedByName: user!.name, projectName: project.name,
-    });
-    setShowEditRequestDialog(false);
-    setEditRequestIndicator(''); setEditRequestFields([]); setEditRequestReason('');
-    toast({ title: 'Edit Request Submitted', description: 'Your request has been sent to the admin for approval.' });
+    if (submittingEditRequest) return;
+    setSubmittingEditRequest(true);
+    try {
+      const indicator = allIndicators.find(i => i.id === editRequestIndicator);
+      await requestEdit({
+        projectId: project.id, reportId: report.id, indicatorId: editRequestIndicator,
+        indicatorName: indicator?.name || '', fieldsToEdit: editRequestFields, reason: editRequestReason,
+        requestedBy: user!.id, requestedByName: user!.name, projectName: project.name,
+      });
+      setShowEditRequestDialog(false);
+      setEditRequestIndicator(''); setEditRequestFields([]); setEditRequestReason('');
+      toast({ title: 'Edit Request Submitted', description: 'Your request has been sent to the admin for approval.' });
+    } catch (err: any) {
+      toast({ title: 'Failed to submit request', description: err?.message || 'Unknown error', variant: 'destructive' });
+    } finally {
+      setSubmittingEditRequest(false);
+    }
   };
 
   const handleSaveDraft = async () => {
     const saveData = buildSaveData();
 
+    // Keep existing behavior: only persist rows that have at least one non-empty field.
+    // But we still call "replace" per indicator, so old rows won't remain (no duplicates).
     const toPersist = saveData.filter((d) => {
       const { indicatorId, ...rest } = d as any;
       return Object.values(rest).some((v) => {
@@ -325,12 +367,30 @@ export default function ReportingInterface() {
       });
     });
 
+    const grouped = toPersist.reduce<Record<string, DisaggregatedData[]>>((acc, d) => {
+      (acc[d.indicatorId] ||= []).push(d);
+      return acc;
+    }, {});
+
+    // Ensure indicators present in UI are also replaced (with empty rows if needed).
+    const allIndicatorIds = Object.keys(saveData.reduce<Record<string, true>>((acc, d) => {
+      acc[d.indicatorId] = true;
+      return acc;
+    }, {}));
+
     setSavingDraft(true);
     try {
       await Promise.all(
-        toPersist.map(async (d) => {
-          const payload = toApiPayload(mapRowToPayload(d.indicatorId, d));
-          await apiSubmitDisaggregatedData(payload);
+        allIndicatorIds.map(async (indicatorIdStr) => {
+          const indicatorId = Number(indicatorIdStr);
+          const rows = grouped[indicatorIdStr] || [];
+          const rowsPayload = rows.map((row) => toApiPayload(mapRowToPayload(indicatorIdStr, row)));
+          await apiReplaceDisaggregatedData({
+            reportId: Number(report.id),
+            projectId: Number(project.id),
+            indicatorId,
+            rows: rowsPayload,
+          });
         })
       );
       updateReportData(project.id, report.id, saveData);
@@ -345,6 +405,19 @@ export default function ReportingInterface() {
 
   const toggleField = (field: string) => {
     setEditRequestFields(prev => prev.includes(field) ? prev.filter(f => f !== field) : [...prev, field]);
+  };
+
+  const openIndicatorPicker = () => {
+    setIndicatorSearch('');
+    setShowEditRequestDialog(false);
+    setShowIndicatorPicker(true);
+  };
+
+  const pickIndicator = (id: string) => {
+    setEditRequestIndicator(id);
+    setEditRequestFields([]);
+    setShowIndicatorPicker(false);
+    setShowEditRequestDialog(true);
   };
 
   const getFilledCount = (indicatorId: string, indicatorName: string) => {
@@ -455,15 +528,28 @@ export default function ReportingInterface() {
                       </div>
                       {activeIndicator === ind.id && (
                         <div className="px-6 py-6 bg-secondary/20 border-t border-border">
-                          {config ? (
-                            <MultiRowIndicatorForm
-                              config={config}
-                              rows={rows}
-                              onChange={(newRows) => updateMultiRows(ind.id, newRows)}
-                              disabled={!canEdit}
-                              validationErrors={indicatorErrors}
-                            />
-                          ) : (
+                          {config ? (() => {
+                            const approvedEdit = hasApprovedEdits
+                              ? approvedEditsForReport.find((r) => r.indicatorId === ind.id)
+                              : undefined;
+
+                            const indicatorCanEdit = canEdit && (!hasApprovedEdits || !!approvedEdit);
+                            const disabledFields = approvedEdit
+                              ? config.fields.map((f) => f.key).filter((k) => !approvedEdit.fieldsToEdit.includes(k))
+                              : [];
+
+                            return (
+                              <MultiRowIndicatorForm
+                                config={config}
+                                rows={rows}
+                                onChange={(newRows) => updateMultiRows(ind.id, newRows)}
+                                disabled={!indicatorCanEdit}
+                                disabledFields={disabledFields}
+                                disableActions={!!approvedEdit}
+                                validationErrors={indicatorErrors}
+                              />
+                            );
+                          })() : (
                             <p className="text-[13px] text-muted-foreground italic">
                               No disaggregation configuration found for this indicator. Contact your administrator.
                             </p>
@@ -497,52 +583,132 @@ export default function ReportingInterface() {
 
       {/* Edit Request Dialog */}
       <Dialog open={showEditRequestDialog} onOpenChange={setShowEditRequestDialog}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="text-lg">Request Edit</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-5 py-2">
-            <div className="space-y-2">
-              <Label className="field-label">Indicator</Label>
-              <Select value={editRequestIndicator} onValueChange={v => { setEditRequestIndicator(v); setEditRequestFields([]); }}>
-                <SelectTrigger className="h-11"><SelectValue placeholder="Select indicator" /></SelectTrigger>
-                <SelectContent>
-                  {allIndicators.map(ind => <SelectItem key={ind.id} value={ind.id}>{ind.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            {editRequestIndicator && (() => {
-              const ind = allIndicators.find(i => i.id === editRequestIndicator);
-              const config = getRuntimeIndicatorConfig(editRequestIndicator, ind?.name);
-              const fieldKeys = config ? config.fields.map(f => f.key) : [];
-              return fieldKeys.length > 0 ? (
-                <div className="space-y-2">
-                  <Label className="field-label">Fields to Edit</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {fieldKeys.map(f => {
-                      const fieldCfg = config?.fields.find(fc => fc.key === f);
-                      return (
-                        <button
-                          key={f}
-                          onClick={() => toggleField(f)}
-                          className={`text-[13px] px-3 py-1.5 rounded-lg border transition-all duration-150 ${editRequestFields.includes(f) ? 'border-primary bg-primary/8 text-primary font-medium' : 'border-border text-muted-foreground hover:border-primary/30'}`}
-                        >
-                          {fieldCfg?.label || f}
-                        </button>
-                      );
-                    })}
+        <DialogContent className="w-[92vw] max-w-md">
+          <div className="mx-auto w-full max-w-[360px]">
+            <DialogHeader>
+              <DialogTitle className="text-lg">Request Edit</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-5 py-2">
+              <div className="space-y-2">
+                <Label className="field-label">Indicator</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 w-full justify-between font-normal min-w-0"
+                  onClick={openIndicatorPicker}
+                >
+                  <span className={cn("min-w-0 flex-1 text-left truncate", editRequestIndicator ? 'text-foreground' : 'text-muted-foreground')}>
+                    {editRequestIndicator
+                      ? (allIndicators.find(i => i.id === editRequestIndicator)?.name ?? 'Selected indicator')
+                      : 'Select indicator'}
+                  </span>
+                  <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                </Button>
+              </div>
+              {editRequestIndicator && (() => {
+                const ind = allIndicators.find(i => i.id === editRequestIndicator);
+                const config = getRuntimeIndicatorConfig(editRequestIndicator, ind?.name);
+                const fieldKeys = config ? config.fields.map(f => f.key) : [];
+                return fieldKeys.length > 0 ? (
+                  <div className="space-y-2">
+                    <Label className="field-label">Fields to Edit</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {fieldKeys.map(f => {
+                        const fieldCfg = config?.fields.find(fc => fc.key === f);
+                        return (
+                          <button
+                            key={f}
+                            onClick={() => toggleField(f)}
+                            className={`text-[13px] px-3 py-1.5 rounded-lg border transition-all duration-150 ${editRequestFields.includes(f) ? 'border-primary bg-primary/8 text-primary font-medium' : 'border-border text-muted-foreground hover:border-primary/30'}`}
+                          >
+                            {fieldCfg?.label || f}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              ) : null;
-            })()}
-            <div className="space-y-2">
-              <Label className="field-label">Reason</Label>
-              <Textarea value={editRequestReason} onChange={e => setEditRequestReason(e.target.value)} placeholder="Explain why this edit is needed..." rows={3} className="text-[14px]" />
+                ) : null;
+              })()}
+              <div className="space-y-2">
+                <Label className="field-label">Reason</Label>
+                <Textarea value={editRequestReason} onChange={e => setEditRequestReason(e.target.value)} placeholder="Explain why this edit is needed..." rows={3} className="text-[14px]" />
+              </div>
+            </div>
+            <DialogFooter className="gap-3">
+              <Button variant="outline" className="h-11" onClick={() => setShowEditRequestDialog(false)}>Cancel</Button>
+              <Button
+                className="h-11"
+                onClick={handleEditRequest}
+                disabled={
+                  submittingEditRequest ||
+                  !editRequestIndicator ||
+                  editRequestFields.length === 0 ||
+                  !editRequestReason.trim()
+                }
+              >
+                {submittingEditRequest ? 'Submitting…' : 'Submit Request'}
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Indicator Picker (opens after closing Request Edit modal) */}
+      <Dialog open={showIndicatorPicker} onOpenChange={setShowIndicatorPicker}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg">Select Indicator</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3 py-1">
+            <Input
+              value={indicatorSearch}
+              onChange={(e) => setIndicatorSearch(e.target.value)}
+              placeholder="Search indicators..."
+              className="h-11"
+            />
+
+            <div className="max-h-[55vh] overflow-y-auto border border-border rounded-xl divide-y divide-border">
+              {allIndicators
+                .filter((ind) => {
+                  const q = indicatorSearch.trim().toLowerCase();
+                  if (!q) return true;
+                  return ind.name.toLowerCase().includes(q);
+                })
+                .map((ind) => (
+                  <button
+                    key={ind.id}
+                    type="button"
+                    onClick={() => pickIndicator(ind.id)}
+                    className="w-full text-left px-4 py-3 hover:bg-secondary/30 transition-colors"
+                  >
+                    <p className="text-[14px] font-medium">{ind.name}</p>
+                  </button>
+                ))}
+              {allIndicators.length > 0 &&
+                allIndicators.filter((ind) => {
+                  const q = indicatorSearch.trim().toLowerCase();
+                  if (!q) return true;
+                  return ind.name.toLowerCase().includes(q);
+                }).length === 0 && (
+                  <div className="px-4 py-10 text-center text-[13px] text-muted-foreground">
+                    No indicators match your search.
+                  </div>
+                )}
             </div>
           </div>
+
           <DialogFooter className="gap-3">
-            <Button variant="outline" className="h-11" onClick={() => setShowEditRequestDialog(false)}>Cancel</Button>
-            <Button className="h-11" onClick={handleEditRequest} disabled={!editRequestIndicator || editRequestFields.length === 0 || !editRequestReason.trim()}>Submit Request</Button>
+            <Button
+              variant="outline"
+              className="h-11"
+              onClick={() => {
+                setShowIndicatorPicker(false);
+                setShowEditRequestDialog(true);
+              }}
+            >
+              Back
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

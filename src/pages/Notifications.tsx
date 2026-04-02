@@ -1,24 +1,71 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNotifications } from '@/contexts/NotificationContext';
 import { Button } from '@/components/ui/button';
 import { Bell, Check, CheckCheck, Mail, AlertTriangle, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
+import { useAuth } from '@/contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 const typeIcons: Record<string, typeof Bell> = {
-  assignment: Mail,
-  publish: CheckCheck,
-  edit_approval: Check,
-  edit_rejection: AlertTriangle,
+  PROJECT_ASSIGNED: Mail,
+  REPORT_PUBLISHED: CheckCheck,
+  REPORT_SUBMITTED: CheckCheck,
+  EDIT_REQUESTED: Check,
 };
 
 export default function Notifications() {
   const { notifications, unreadCount, isLoading, markOneRead, markAllRead } = useNotifications();
+  const { user, isAdmin, isLead, isSuperAdmin } = useAuth();
+  const navigate = useNavigate();
   // Local UI guard to prevent rapid double-click; backend/context also guards.
   const [markingAll, setMarkingAll] = useState(false);
 
   const sorted = [...notifications].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
+
+  const routeFor = useMemo(() => {
+    const safeParseData = (data: unknown): any => {
+      if (!data || typeof data !== 'object') return {};
+      return data as any;
+    };
+
+    return (n: { type: string; data?: unknown }) => {
+      const d = safeParseData(n.data);
+
+      if (n.type === 'PROJECT_ASSIGNED') {
+        const projectId = d.projectId != null ? String(d.projectId) : '';
+        if (isAdmin || isSuperAdmin) return projectId ? `/admin/projects/${projectId}` : '/admin';
+        if (isLead) return projectId ? `/lead?projectId=${encodeURIComponent(projectId)}` : '/lead';
+        return '/';
+      }
+
+      if (n.type === 'REPORT_SUBMITTED' || n.type === 'REPORT_PUBLISHED') {
+        const reportId = d.reportId != null ? String(d.reportId) : '';
+        if (isAdmin || isSuperAdmin) return reportId ? `/admin/reports/${reportId}` : '/admin';
+        return '/';
+      }
+
+      if (n.type === 'EDIT_REQUESTED') {
+        const editRequestId = d.editRequestId != null ? String(d.editRequestId) : '';
+        const projectId = d.projectId != null ? String(d.projectId) : '';
+        const reportId = d.reportId != null ? String(d.reportId) : '';
+        const resolution = d.resolution ? String(d.resolution) : '';
+
+        // Admins review in Edit Requests page.
+        if (isAdmin || isSuperAdmin) return editRequestId ? `/admin/edit-requests` : '/admin/edit-requests';
+
+        // Leads edit the unlocked report after approval.
+        if (isLead && projectId && reportId && resolution === 'APPROVED') {
+          return `/lead/report/${projectId}/${reportId}`;
+        }
+        // For rejected (or missing info) just go to dashboard.
+        if (isLead) return '/lead';
+      }
+
+      return user?.role === 'admin' ? '/admin' : user?.role === 'project_lead' ? '/lead' : '/';
+    };
+  }, [isAdmin, isLead, isSuperAdmin, user?.role]);
 
   return (
     <div className="page-container space-y-8">
@@ -74,17 +121,14 @@ export default function Notifications() {
                   className={`px-6 py-5 flex items-start gap-4 transition-all duration-150 cursor-pointer hover:bg-secondary/30 ${
                     !n.isRead ? 'bg-primary/3' : ''
                   }`}
-                  onClick={() => !n.isRead && markOneRead(n.id)}
+                  onClick={async () => {
+                    if (!n.isRead) await markOneRead(n.id);
+                    navigate(routeFor(n));
+                  }}
                 >
-                  <div
-                    className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${
-                      n.type === 'edit_rejection' ? 'bg-destructive/10' : 'bg-primary/8'
-                    }`}
-                  >
+                  <div className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0 bg-primary/8">
                     <Icon
-                      className={`h-[18px] w-[18px] ${
-                        n.type === 'edit_rejection' ? 'text-destructive' : 'text-primary'
-                      }`}
+                      className="h-[18px] w-[18px] text-primary"
                     />
                   </div>
                   <div className="flex-1 min-w-0">

@@ -8,6 +8,8 @@ import { AppProvider } from "@/contexts/AppContext";
 import { NotificationProvider } from "@/contexts/NotificationContext";
 import { MainLayout } from "@/layouts/MainLayout";
 import Login from "./pages/Login";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import ProjectWizard from "./pages/admin/ProjectWizard";
 import ProjectDetails from "./pages/admin/ProjectDetails";
@@ -76,6 +78,8 @@ const App = () => (
           <AppProvider>
             <Routes>
               <Route path="/login" element={<Login />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/invite/:token" element={<InviteAccept />} />
               <Route path="/" element={<RootRedirect />} />
 

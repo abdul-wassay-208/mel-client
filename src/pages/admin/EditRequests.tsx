@@ -2,26 +2,42 @@ import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Button } from '@/components/ui/button';
-import { Check, X, FileEdit, Clock } from 'lucide-react';
+import { Check, X, FileEdit, Clock, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
+import { useState } from 'react';
 
 export default function EditRequests() {
   const { editRequests, approveEditRequest, rejectEditRequest } = useApp();
   const { user } = useAuth();
   const { toast } = useToast();
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
   const pending = editRequests.filter(r => r.status === 'pending');
   const resolved = editRequests.filter(r => r.status !== 'pending');
 
-  const handleApprove = (id: string) => {
-    approveEditRequest(id, user!.id);
-    toast({ title: 'Edit Request Approved', description: 'The report has been unlocked for editing.' });
+  const handleApprove = async (id: string) => {
+    try {
+      setActionLoadingId(id);
+      await approveEditRequest(id, user!.id);
+      toast({ title: 'Edit Request Approved', description: 'The report has been unlocked for editing.' });
+    } catch (e: any) {
+      toast({ title: 'Failed to approve request', description: e?.message || 'Unknown error', variant: 'destructive' });
+    } finally {
+      setActionLoadingId(null);
+    }
   };
 
-  const handleReject = (id: string) => {
-    rejectEditRequest(id, user!.id);
-    toast({ title: 'Edit Request Rejected', description: 'The report remains locked.' });
+  const handleReject = async (id: string) => {
+    try {
+      setActionLoadingId(id);
+      await rejectEditRequest(id, user!.id);
+      toast({ title: 'Edit Request Rejected', description: 'The report remains locked.' });
+    } catch (e: any) {
+      toast({ title: 'Failed to reject request', description: e?.message || 'Unknown error', variant: 'destructive' });
+    } finally {
+      setActionLoadingId(null);
+    }
   };
 
   return (
@@ -65,11 +81,26 @@ export default function EditRequests() {
                     </div>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
-                    <Button variant="outline" className="h-10" onClick={() => handleReject(req.id)}>
-                      <X className="h-4 w-4 mr-1.5" />Reject
+                    <Button
+                      variant="outline"
+                      className="h-10"
+                      disabled={actionLoadingId === req.id}
+                      onClick={() => handleReject(req.id)}
+                    >
+                      {actionLoadingId === req.id ? (
+                        <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                      ) : (
+                        <X className="h-4 w-4 mr-1.5" />
+                      )}
+                      Reject
                     </Button>
-                    <Button className="h-10" onClick={() => handleApprove(req.id)}>
-                      <Check className="h-4 w-4 mr-1.5" />Approve
+                    <Button className="h-10" disabled={actionLoadingId === req.id} onClick={() => handleApprove(req.id)}>
+                      {actionLoadingId === req.id ? (
+                        <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                      ) : (
+                        <Check className="h-4 w-4 mr-1.5" />
+                      )}
+                      Approve
                     </Button>
                   </div>
                 </div>
