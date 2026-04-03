@@ -67,7 +67,12 @@ export default function InviteAccept() {
     setError(null);
     try {
       const res = await apiAcceptInvite(token, values.password);
-      const mappedRole = res.user.role === "ADMIN" ? "admin" : "project_lead";
+      const mappedRole =
+        res.user.role === "ADMIN"
+          ? "admin"
+          : res.user.role === "SUPER_ADMIN"
+            ? "super_admin"
+            : "project_lead";
       setAuthFromToken(
         {
           id: String(res.user.id),
@@ -78,7 +83,14 @@ export default function InviteAccept() {
         res.token
       );
       toast({ title: "Account activated", description: "Your account has been activated successfully." });
-      navigate(mappedRole === "admin" ? "/admin" : "/lead", { replace: true });
+      navigate(
+        mappedRole === "admin"
+          ? "/admin"
+          : mappedRole === "super_admin"
+            ? "/superadmin/mel-config"
+            : "/lead",
+        { replace: true }
+      );
     } catch (err: any) {
       setError(err?.message || "Failed to activate your account.");
       toast({ title: "Activation failed", description: getErrorMessage(err, "Failed to activate your account."), variant: "destructive" });

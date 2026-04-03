@@ -53,6 +53,8 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       setNotifications(notifs);
       setUnreadCount(countData.count);
     } catch (err) {
+      // Avoid showing "Failed to load..." when auth has already expired.
+      if ((err as any)?.status === 401 || (err as any)?.code === 'AUTH_EXPIRED') return;
       console.error('[notifications] fetch error:', err);
       toast.error('Failed to load notifications', {
         description: getErrorMessage(err),

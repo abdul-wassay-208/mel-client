@@ -158,6 +158,7 @@ export default function ProjectWizard() {
   const [leadDialogOpen, setLeadDialogOpen] = useState(false);
   const [creatingLead, setCreatingLead] = useState(false);
   const [leadFieldError, setLeadFieldError] = useState<string | null>(null);
+  const [newLeadError, setNewLeadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const newLeadSchema = useMemo(() => z.object({
@@ -575,7 +576,16 @@ export default function ProjectWizard() {
                   </Select>
                   {leadFieldError && <p className="text-[12px] text-destructive">{leadFieldError}</p>}
 
-                  <Dialog open={leadDialogOpen} onOpenChange={setLeadDialogOpen}>
+                  <Dialog
+                    open={leadDialogOpen}
+                    onOpenChange={(open) => {
+                      setLeadDialogOpen(open);
+                      if (!open) {
+                        setNewLeadError(null);
+                        newLeadForm.reset({ name: '', email: '' });
+                      }
+                    }}
+                  >
                     <DialogContent className="sm:max-w-[420px] rounded-2xl">
                       <DialogHeader>
                         <DialogTitle className="text-lg font-semibold">Add New Project Lead</DialogTitle>
@@ -583,21 +593,34 @@ export default function ProjectWizard() {
                           Create a new user with the Project Lead role. An invitation email will be sent automatically.
                         </DialogDescription>
                       </DialogHeader>
+                      {newLeadError && (
+                        <div className="mb-3 text-[13px] text-destructive bg-destructive/8 border border-destructive/25 rounded-md px-3 py-2">
+                          {newLeadError}
+                        </div>
+                      )}
                       <Form {...newLeadForm}>
                         <form
                           onSubmit={newLeadForm.handleSubmit(async (values) => {
                             if (creatingLead) return;
                             setCreatingLead(true);
+                            setNewLeadError(null);
                             try {
                               const created = await apiCreateUser({
                                 name: values.name.trim(),
                                 email: values.email.trim().toLowerCase(),
                                 role: "PROJECT_LEAD",
                               });
+                              // Backend should return `created.email` as a string.
+                              // If it ever returns a non-string (e.g. Brevo provider payload),
+                              // fall back to the email we just submitted to avoid React crashes.
+                              const mappedEmail =
+                                typeof (created as any)?.email === "string"
+                                  ? (created as any).email
+                                  : values.email.trim().toLowerCase();
                               const mapped = {
                                 id: String(created.id),
                                 name: created.name,
-                                email: created.email,
+                                email: mappedEmail,
                               };
                               setProjectLeads((prev) => [mapped, ...prev]);
                               setSelectedLeads([mapped.id]);
@@ -609,11 +632,7 @@ export default function ProjectWizard() {
                               setLeadDialogOpen(false);
                             } catch (err: any) {
                               console.error(err);
-                              toast({
-                                title: 'Failed to create lead',
-                                description: err?.message || 'Unknown error',
-                                variant: 'destructive',
-                              });
+                              setNewLeadError(err?.message || 'Failed to create lead. This email may already exist.');
                             } finally {
                               setCreatingLead(false);
                             }

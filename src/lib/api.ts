@@ -40,7 +40,18 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
     } catch {
       // ignore
     }
-    throw new ApiError(message, { status: res.status });
+    // If the token is expired/invalid, force the app back to login.
+    if (res.status === 401) {
+      message = "Session expired. Please log in again.";
+      try {
+        localStorage.removeItem("mel_token");
+        localStorage.removeItem("mel_user");
+      } catch {
+        // ignore
+      }
+      window.dispatchEvent(new CustomEvent("mel-auth-expired"));
+    }
+    throw new ApiError(message, { status: res.status, code: res.status === 401 ? "AUTH_EXPIRED" : undefined });
   }
 
   return res.json() as Promise<T>;

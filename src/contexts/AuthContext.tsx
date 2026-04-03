@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { User } from '@/types';
 import { apiLogin } from '@/lib/api';
+import { useNavigate } from 'react-router-dom';
 
 interface AuthContextType {
   user: User | null;
@@ -18,13 +19,44 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
+
+  const isJwtExpired = (token: string | null) => {
+    if (!token) return false;
+    const parts = token.split('.');
+    if (parts.length < 2) return false;
+    try {
+      const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+      const padded = base64.padEnd(base64.length + (4 - (base64.length % 4)) % 4, '=');
+      const json = atob(padded);
+      const payload = JSON.parse(json) as { exp?: number };
+      if (typeof payload.exp !== 'number') return false;
+      return payload.exp * 1000 < Date.now();
+    } catch {
+      return false;
+    }
+  };
 
   useEffect(() => {
     const stored = localStorage.getItem('mel_user');
     if (stored) {
       try {
         const parsed = JSON.parse(stored) as User;
-        setUser(parsed);
+        // Preemptively block access if token is already expired.
+        const token = localStorage.getItem('mel_token');
+        if (isJwtExpired(token)) {
+          try {
+            localStorage.setItem("mel_session_expired", "1");
+          } catch {
+            // ignore
+          }
+          localStorage.removeItem('mel_token');
+          localStorage.removeItem('mel_user');
+          setUser(null);
+          navigate('/login', { replace: true });
+        } else {
+          setUser(parsed);
+        }
       } catch {
         localStorage.removeItem('mel_user');
         localStorage.removeItem('mel_token');
@@ -32,6 +64,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setLoading(false);
   }, []);
+
+  useEffect(() => {
+    const handler = () => {
+      try {
+        localStorage.setItem("mel_session_expired", "1");
+      } catch {
+        // ignore
+      }
+      setUser(null);
+      setLoading(false);
+      navigate('/login', { replace: true });
+    };
+    window.addEventListener('mel-auth-expired', handler);
+    return () => window.removeEventListener('mel-auth-expired', handler);
+  }, [navigate]);
 
   const login = async (email: string, password: string): Promise<User | null> => {
     try {

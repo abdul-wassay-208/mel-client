@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -22,6 +22,22 @@ export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  useEffect(() => {
+    try {
+      const expired = localStorage.getItem('mel_session_expired');
+      if (expired === '1') {
+        toast({
+          title: 'Session expired',
+          description: 'Please log in again to continue.',
+          variant: 'destructive',
+        });
+        localStorage.removeItem('mel_session_expired');
+      }
+    } catch {
+      // ignore
+    }
+  }, [toast]);
 
   const loginSchema = z.object({
     email: z.string().trim().min(1, 'Email is required').email('Enter a valid email'),
