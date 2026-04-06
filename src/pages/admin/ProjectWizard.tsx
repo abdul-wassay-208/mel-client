@@ -6,16 +6,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
-import { ChevronsUpDown } from 'lucide-react';
 import { Objective, GENERAL_CATEGORIES, SPECIFIC_CATEGORIES } from '@/types';
-import { Check, ChevronRight, Plus, Trash2, ChevronDown, Target, TrendingUp, Gauge, AlertCircle } from 'lucide-react';
+import { Check, ChevronRight, Plus, ChevronDown, Target, TrendingUp, Gauge, AlertCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
-import { apiGetUsers, apiCreateUser, ApiUserRecord, apiCreateProject, apiGetConfig, type ProjectCategoriesConfig } from '@/lib/api';
+import { apiGetUsers, apiCreateUser, ApiUserRecord, apiCreateProject, apiGetConfig, apiGetObjectives, type ProjectCategoriesConfig, type ApiObjective } from '@/lib/api';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import type { MelConfigPayload } from '@/lib/melConfigLive';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -23,65 +19,6 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { cn } from '@/lib/utils';
 
 const steps = ['Project Details', 'Define Structure', 'Confirm & Save'];
-
-// ── Hardcoded Strategic Objectives ──
-
-const STRATEGIC_OBJECTIVES_DATA: { id: string; label: string; prefix: string }[] = [
-  { id: 'obj1', label: 'Objective 1 – Enhance technical capability of more than 100,000 people', prefix: '1' },
-  { id: 'obj2', label: 'Objective 2 – Enhance digital inclusion for 1 million people', prefix: '2' },
-  { id: 'obj3', label: 'Objective 3 – Influence techno policy transformation in at least 10 economies', prefix: '3' },
-];
-
-// ── Hardcoded Outcome & Indicator Data ──
-
-const OUTCOMES_DATA: { id: string; label: string }[] = [
-  { id: '1.1', label: 'Outcome 1.1 – Internet users have reliable, safe, and meaningful access to the Internet' },
-  { id: '1.2', label: 'Outcome 1.2 – A robust Internet ecosystem is nurtured through collaboration and knowledge sharing by inclusive communities of practice' },
-  { id: '1.3', label: 'Outcome 1.3 – Communities gain better access to knowledge and have more opportunities for better livelihoods' },
-  { id: '2.1', label: 'Outcome 2.1 – New and evolving Internet and digital technologies responsibly further socio-economic outcomes' },
-  { id: '2.2', label: 'Outcome 2.2 – Stakeholders\' actions are grounded in unbiased frameworks that are vendor-neutral and tech-neutral' },
-  { id: '3.1', label: 'Outcome 3.1 – Stakeholders intervene based on coordinated and informed technical and policy advice' },
-  { id: '3.2', label: 'Outcome 3.2 – Governments nurture supportive techno-policy environments to facilitate digital development and further socioeconomic progress' },
-  { id: '3.3', label: 'Outcome 3.3 – Establish leadership for collective impact for digital development' },
-];
-
-const INDICATORS_DATA: { id: string; outcomePrefix: string; label: string }[] = [
-  { id: '1.1.1', outcomePrefix: '1.1', label: '1.1.1 – # of local infrastructure deployed or upgraded' },
-  { id: '1.1.2', outcomePrefix: '1.1', label: '1.1.2 – % of Internet traffic served locally' },
-  { id: '1.1.3', outcomePrefix: '1.1', label: '1.1.3 – # of people benefiting from infrastructure improvements' },
-  { id: '1.2.1', outcomePrefix: '1.2', label: '1.2.1 – # of people trained' },
-  { id: '1.2.2', outcomePrefix: '1.2', label: '1.2.2 – % of participants applying knowledge in workplace or operations' },
-  { id: '1.2.3', outcomePrefix: '1.2', label: '1.2.3 – # of organisations represented' },
-  { id: '1.3.1', outcomePrefix: '1.3', label: '1.3.1 – # of knowledge resources produced' },
-  { id: '1.3.2', outcomePrefix: '1.3', label: '1.3.2 – % of beneficiaries reporting improved livelihood opportunities' },
-  { id: '2.1.1', outcomePrefix: '2.1', label: '2.1.1 – # of Foundation-supported research, tools, platforms, protocols, and pilot solutions developed or trialed' },
-  { id: '2.1.2', outcomePrefix: '2.1', label: '2.1.2 – # of innovations adopted by ISPs, governments, institutions, and other relevant entities' },
-  { id: '2.1.3', outcomePrefix: '2.1', label: '2.1.3 – # of people benefitting from innovative solutions deployed' },
-  { id: '2.2.1', outcomePrefix: '2.2', label: '2.2.1 – # of vendor or tech-neutral frameworks developed or published' },
-  { id: '2.2.2', outcomePrefix: '2.2', label: '2.2.2 – # of stakeholders adopting or supporting vendor or tech-neutral frameworks' },
-  { id: '3.1.1', outcomePrefix: '3.1', label: '3.1.1 – # of policy papers, briefs, or guidance notes published' },
-  { id: '3.1.2', outcomePrefix: '3.1', label: '3.1.2 – # of stakeholders citing Foundation in policies, strategies, frameworks, consultations, or reports' },
-  { id: '3.1.3', outcomePrefix: '3.1', label: '3.1.3 – # of capacity-building and advocacy events on digital policy' },
-  { id: '3.1.4', outcomePrefix: '3.1', label: '3.1.4 – % of stakeholders reporting increased policy understanding or capacity' },
-  { id: '3.2.1', outcomePrefix: '3.2', label: '3.2.1 – # of draft or adopted policies, strategies, or regulations that reflect Foundation input' },
-  { id: '3.2.2', outcomePrefix: '3.2', label: '3.2.2 – # of people impacted by policy or regulatory changes' },
-  { id: '3.3.1', outcomePrefix: '3.3', label: '3.3.1 – # of multistakeholder initiatives or platforms supported, co-led or sustained by the Foundation' },
-  { id: '3.3.2', outcomePrefix: '3.3', label: '3.3.2 – # of joint publications, reports, events, and activities with partners' },
-  { id: '3.3.3', outcomePrefix: '3.3', label: '3.3.3 – % of partners recognising Foundation as a leader in digital development' },
-];
-
-interface OutcomeRow {
-  uid: string;
-  outcomeId: string;
-  indicatorIds: string[];
-}
-
-interface StrategicObjective {
-  uid: string;
-  name: string;
-  expanded: boolean;
-  outcomeRows: OutcomeRow[];
-}
 
 export default function ProjectWizard() {
   const [step, setStep] = useState(0);
@@ -144,13 +81,11 @@ export default function ProjectWizard() {
   const [categoryConfig, setCategoryConfig] = useState<ProjectCategoriesConfig | null>(null);
 
   // Step 2 state
-  const [strategicObjectives, setStrategicObjectives] = useState<StrategicObjective[]>([]);
-  const [melLiveObjectives, setMelLiveObjectives] = useState<MelConfigPayload['objectives'] | null>(null);
+  const [dbObjectives, setDbObjectives] = useState<ApiObjective[]>([]);
+  const [selectedObjectiveIds, setSelectedObjectiveIds] = useState<number[]>([]);
+  const [expandedObjectiveIds, setExpandedObjectiveIds] = useState<number[]>([]);
   const [step2Submitted, setStep2Submitted] = useState(false);
-  const [step2FieldErrors, setStep2FieldErrors] = useState<{
-    global?: string;
-    bySO?: Record<string, { global?: string; byRow?: Record<string, { outcome?: string; indicators?: string }> }>;
-  }>({});
+  const [step2Error, setStep2Error] = useState<string | null>(null);
 
   // Step 3 state
   const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
@@ -211,12 +146,11 @@ export default function ProjectWizard() {
     let alive = true;
     (async () => {
       try {
-        const res = await apiGetConfig<MelConfigPayload>('melConfigLive');
+        const objectives = await apiGetObjectives();
         if (!alive) return;
-        setMelLiveObjectives(res.value?.objectives ?? null);
+        setDbObjectives(objectives);
       } catch {
         if (!alive) return;
-        setMelLiveObjectives(null);
       }
     })();
     return () => { alive = false; };
@@ -234,52 +168,12 @@ export default function ProjectWizard() {
 
   const validateStep2 = () => {
     setStep2Submitted(true);
-    const errors: string[] = [];
-    const fieldErrs: NonNullable<typeof step2FieldErrors> = { bySO: {} };
-    if (strategicObjectives.length === 0) {
-      errors.push('At least 1 Strategic Objective is required');
-      fieldErrs.global = 'At least 1 Strategic Objective is required';
-      setStep2FieldErrors(fieldErrs);
+    if (selectedObjectiveIds.length === 0) {
+      setStep2Error('At least 1 Strategic Objective is required');
       return false;
     }
-    for (let si = 0; si < strategicObjectives.length; si++) {
-      const so = strategicObjectives[si];
-      if (!so.name) errors.push(`Strategic Objective ${si + 1}: Objective must be selected`);
-      if (so.outcomeRows.length === 0) {
-        const soData = STRATEGIC_OBJECTIVES_DATA.find(s => s.id === so.name);
-        errors.push(`"${soData?.label || `Objective ${si + 1}`}": At least 1 Outcome is required`);
-        fieldErrs.bySO![so.uid] = { ...(fieldErrs.bySO![so.uid] || {}), global: 'At least 1 Outcome is required' };
-      } else {
-        // Check duplicate outcomes
-        const outcomeIds = so.outcomeRows.map(r => r.outcomeId).filter(Boolean);
-        const duplicateOutcomes = outcomeIds.filter((id, i) => outcomeIds.indexOf(id) !== i);
-        if (duplicateOutcomes.length > 0) {
-          const soData = STRATEGIC_OBJECTIVES_DATA.find(s => s.id === so.name);
-          errors.push(`"${soData?.label || `Objective ${si + 1}`}": Duplicate outcomes not allowed`);
-        }
-        for (let ri = 0; ri < so.outcomeRows.length; ri++) {
-          const row = so.outcomeRows[ri];
-          if (!row.outcomeId) {
-            errors.push(`Objective ${si + 1}, Row ${ri + 1}: Outcome must be selected`);
-            fieldErrs.bySO![so.uid] = fieldErrs.bySO![so.uid] || { byRow: {} };
-            fieldErrs.bySO![so.uid]!.byRow = fieldErrs.bySO![so.uid]!.byRow || {};
-            fieldErrs.bySO![so.uid]!.byRow![row.uid] = { ...(fieldErrs.bySO![so.uid]!.byRow![row.uid] || {}), outcome: 'Outcome is required' };
-          }
-          if (row.indicatorIds.length === 0) {
-            errors.push(`Objective ${si + 1}, Outcome ${row.outcomeId || ri + 1}: At least 1 Indicator is required`);
-            fieldErrs.bySO![so.uid] = fieldErrs.bySO![so.uid] || { byRow: {} };
-            fieldErrs.bySO![so.uid]!.byRow = fieldErrs.bySO![so.uid]!.byRow || {};
-            fieldErrs.bySO![so.uid]!.byRow![row.uid] = { ...(fieldErrs.bySO![so.uid]!.byRow![row.uid] || {}), indicators: 'Select at least 1 indicator' };
-          }
-          const dupInds = row.indicatorIds.filter((id, i) => row.indicatorIds.indexOf(id) !== i);
-          if (dupInds.length > 0) {
-            errors.push(`Objective ${si + 1}, Outcome ${row.outcomeId}: Duplicate indicators not allowed`);
-          }
-        }
-      }
-    }
-    setStep2FieldErrors(fieldErrs);
-    return errors.length === 0;
+    setStep2Error(null);
+    return true;
   };
 
   const handleNext = async () => {
@@ -295,41 +189,20 @@ export default function ProjectWizard() {
     setStep(s => Math.min(s + 1, 2));
   };
 
-  // Convert Step 2 data to Objective[] for saving
-  const buildObjectives = (): Objective[] => {
-    return strategicObjectives.map(so => {
-      const soDataLive = melLiveObjectives?.find(o => o.id === so.name) || null;
-      const soData = STRATEGIC_OBJECTIVES_DATA.find(s => s.id === so.name);
-      return {
-        id: so.uid,
-        name: soDataLive?.title || soData?.label || so.name,
-        description: '',
-        outcomes: so.outcomeRows.filter(r => r.outcomeId).map(row => {
-        const outcomeLive = soDataLive?.outcomes.find(oc => oc.id === row.outcomeId) || null;
-        const outcomeData = OUTCOMES_DATA.find(o => o.id === row.outcomeId);
-        return {
-          id: `out_${row.uid}`,
-          name: outcomeLive?.title || (outcomeData?.label || row.outcomeId),
-          description: '',
-          objectiveId: so.uid,
-          indicators: row.indicatorIds.map(indId => {
-            const indLive = outcomeLive?.indicators.find(i => i.code === indId) || null;
-            const indData = INDICATORS_DATA.find(i => i.id === indId);
-            return {
-              id: `ind_${indId}_${row.uid}`,
-              name: indLive ? `${indLive.code} – ${indLive.title}` : (indData?.label || indId),
-              description: '',
-              outcomeId: `out_${row.uid}`,
-            };
-          }),
-        };
-      }),
-      };
-    });
+  const toggleObjective = (id: number) => {
+    setSelectedObjectiveIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+    if (step2Submitted) setStep2Error(null);
+  };
+
+  const toggleExpand = (id: number) => {
+    setExpandedObjectiveIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
   };
 
   const handleSave = async () => {
-    const objectives = buildObjectives();
     setSaving(true);
     try {
       const details = detailsForm.getValues();
@@ -346,18 +219,7 @@ export default function ProjectWizard() {
         endDate: details.endDate,
         reportingInterval: details.interval,
         leadIds: selectedLeads.map((id) => Number(id)),
-        objectives: objectives.map((o) => ({
-          name: o.name,
-          description: o.description,
-          outcomes: o.outcomes.map((out) => ({
-            name: out.name,
-            description: out.description,
-            indicators: out.indicators.map((ind) => ({
-              name: ind.name,
-              description: ind.description,
-            })),
-          })),
-        })),
+        objectiveIds: selectedObjectiveIds,
       });
 
       const mappedObjectives: Objective[] = (created.objectives ?? []).map((o: any) => ({
@@ -378,7 +240,6 @@ export default function ProjectWizard() {
         })),
       }));
 
-      // Add to local state immediately; AppContext will also load from backend on refresh.
       addProject({
         id: String(created.id),
         name: created.name,
@@ -392,8 +253,7 @@ export default function ProjectWizard() {
         description: created.description ?? details.description,
         reportingInterval: created.reportingInterval === 'MONTHLY' ? 'monthly' : 'quarterly',
         expectedUsers: created.expectedUsers ?? (typeof details.expectedUsers === 'number' ? details.expectedUsers : 0),
-        // IMPORTANT: use DB-created nested structure so indicator IDs are real numeric IDs
-        objectives: mappedObjectives.length > 0 ? mappedObjectives : objectives,
+        objectives: mappedObjectives,
         status: 'active',
         reports: [],
         createdAt: created.createdAt,
@@ -413,85 +273,7 @@ export default function ProjectWizard() {
     }
   };
 
-  // ── Step 2 helpers ──
 
-  const addStrategicObjective = (soId: string) => {
-    const soData = melLiveObjectives?.find(s => s.id === soId) || STRATEGIC_OBJECTIVES_DATA.find(s => s.id === soId);
-    if (!soData) return;
-    // Prevent duplicates
-    if (strategicObjectives.some(s => s.name === soData.id)) return;
-    setStrategicObjectives(prev => [...prev, {
-      uid: `so_${Date.now()}`,
-      name: soData.id,
-      expanded: true,
-      outcomeRows: [],
-    }]);
-  };
-
-  const removeStrategicObjective = (uid: string) => {
-    setStrategicObjectives(prev => prev.filter(s => s.uid !== uid));
-  };
-
-  const toggleSO = (uid: string) => {
-    setStrategicObjectives(prev => prev.map(s => s.uid === uid ? { ...s, expanded: !s.expanded } : s));
-  };
-
-  const addOutcomeRow = (soUid: string) => {
-    setStrategicObjectives(prev => prev.map(s => s.uid === soUid ? {
-      ...s, outcomeRows: [...s.outcomeRows, { uid: `or_${Date.now()}`, outcomeId: '', indicatorIds: [] }]
-    } : s));
-  };
-
-  const removeOutcomeRow = (soUid: string, rowUid: string) => {
-    setStrategicObjectives(prev => prev.map(s => s.uid === soUid ? {
-      ...s, outcomeRows: s.outcomeRows.filter(r => r.uid !== rowUid)
-    } : s));
-  };
-
-  const setOutcomeForRow = (soUid: string, rowUid: string, outcomeId: string) => {
-    setStrategicObjectives(prev => prev.map(s => s.uid === soUid ? {
-      ...s, outcomeRows: s.outcomeRows.map(r => r.uid === rowUid ? { ...r, outcomeId, indicatorIds: [] } : r)
-    } : s));
-  };
-
-  const toggleIndicator = (soUid: string, rowUid: string, indId: string) => {
-    setStrategicObjectives(prev => prev.map(s => s.uid === soUid ? {
-      ...s, outcomeRows: s.outcomeRows.map(r => r.uid === rowUid ? {
-        ...r, indicatorIds: r.indicatorIds.includes(indId)
-          ? r.indicatorIds.filter(id => id !== indId)
-          : [...r.indicatorIds, indId]
-      } : r)
-    } : s));
-  };
-
-  const removeIndicator = (soUid: string, rowUid: string, indId: string) => {
-    setStrategicObjectives(prev => prev.map(s => s.uid === soUid ? {
-      ...s, outcomeRows: s.outcomeRows.map(r => r.uid === rowUid ? {
-        ...r, indicatorIds: r.indicatorIds.filter(id => id !== indId)
-      } : r)
-    } : s));
-  };
-
-  const getUsedOutcomeIds = (so: StrategicObjective, excludeRowUid: string) => {
-    return so.outcomeRows.filter(r => r.uid !== excludeRowUid).map(r => r.outcomeId).filter(Boolean);
-  };
-
-  const getOutcomesForSO = (soName: string) => {
-    const liveObj = melLiveObjectives?.find(o => o.id === soName);
-    if (liveObj) return liveObj.outcomes.map(oc => ({ id: oc.id, label: oc.title }));
-    const soData = STRATEGIC_OBJECTIVES_DATA.find(s => s.id === soName);
-    if (!soData) return OUTCOMES_DATA;
-    return OUTCOMES_DATA.filter(o => o.id.startsWith(soData.prefix + '.'));
-  };
-
-  const getFilteredIndicators = (outcomeId: string, soName?: string) => {
-    if (soName) {
-      const liveObj = melLiveObjectives?.find(o => o.id === soName);
-      const liveOutcome = liveObj?.outcomes.find(oc => oc.id === outcomeId);
-      if (liveOutcome) return liveOutcome.indicators.map(ind => ({ id: ind.code, outcomePrefix: outcomeId, label: `${ind.code} – ${ind.title}` }));
-    }
-    return INDICATORS_DATA.filter(i => i.outcomePrefix === outcomeId);
-  };
 
   return (
     <div className="page-container max-w-[860px]">
@@ -867,242 +649,83 @@ export default function ProjectWizard() {
         {/* Step 2: Define Structure */}
         {step === 1 && (
           <div className="space-y-5">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <h3 className="section-title">Project Structure</h3>
-                <p className="text-[13px] text-muted-foreground mt-1">Select strategic objectives, then attach outcomes and indicators</p>
-              </div>
-              {!!(melLiveObjectives ?? STRATEGIC_OBJECTIVES_DATA).find((s: any) => !strategicObjectives.some(so => so.name === s.id)) && (
-                <Select onValueChange={(v) => addStrategicObjective(v)}>
-                  <SelectTrigger className="h-10 w-[320px]">
-                    <SelectValue placeholder="Add Strategic Objective..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(melLiveObjectives ?? STRATEGIC_OBJECTIVES_DATA)
-                      .filter((s: any) => !strategicObjectives.some(so => so.name === s.id))
-                      .map((s: any) => (
-                      <SelectItem key={s.id} value={s.id} className="text-sm py-2">{s.title ?? s.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
+            <div>
+              <h3 className="section-title">Project Structure</h3>
+              <p className="text-[13px] text-muted-foreground mt-1">Select the strategic objectives that apply to this project</p>
             </div>
 
-            {strategicObjectives.length === 0 && (
+            {dbObjectives.length === 0 && (
               <div className="text-center py-16 border border-dashed border-border rounded-xl">
                 <Target className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
-                <p className="text-[14px] text-muted-foreground font-medium">No strategic objectives yet</p>
-                <p className="text-[13px] text-muted-foreground/70 mt-1">Select an objective from the dropdown above to begin</p>
-                {step2Submitted && step2FieldErrors.global && (
-                  <p className="text-[13px] text-destructive mt-3 font-medium">{step2FieldErrors.global}</p>
-                )}
+                <p className="text-[14px] text-muted-foreground font-medium">Loading objectives...</p>
               </div>
             )}
 
+            {step2Submitted && step2Error && (
+              <p className="text-[13px] text-destructive font-medium flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0" />{step2Error}
+              </p>
+            )}
+
             <div className="space-y-3">
-              {strategicObjectives.map((so, si) => (
-                <div key={so.uid} className="border border-border rounded-lg overflow-hidden transition-all">
-                  {/* SO Header */}
-                  <div
-                    className="flex items-center gap-2 p-3 cursor-pointer hover:bg-secondary/30 transition-colors"
-                    onClick={() => toggleSO(so.uid)}
-                  >
-                    {so.expanded ? <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform" /> : <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform" />}
-                    <Target className="h-4 w-4 text-primary" />
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono">SO {si + 1}</Badge>
-                    <span className="text-sm font-medium flex-1 truncate">{melLiveObjectives?.find(o => o.id === so.name)?.title || STRATEGIC_OBJECTIVES_DATA.find(s => s.id === so.name)?.label || so.name}</span>
-                    <span className="text-[10px] text-muted-foreground mr-2">
-                      {so.outcomeRows.length} outcome{so.outcomeRows.length !== 1 ? 's' : ''} · {so.outcomeRows.reduce((s, r) => s + r.indicatorIds.length, 0)} indicator{so.outcomeRows.reduce((s, r) => s + r.indicatorIds.length, 0) !== 1 ? 's' : ''}
-                    </span>
-                    <button onClick={e => { e.stopPropagation(); removeStrategicObjective(so.uid); }} className="text-muted-foreground hover:text-destructive p-1 transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
-                  </div>
-
-                  {/* SO Body */}
-                  {so.expanded && (
-                    <div className="px-4 pb-4 pt-3 space-y-4 border-t border-border bg-secondary/10">
-                      {step2Submitted && step2FieldErrors.bySO?.[so.uid]?.global && (
-                        <div className="bg-destructive/6 border border-destructive/15 rounded-lg p-3">
-                          <p className="text-[13px] text-destructive flex items-center gap-2">
-                            <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                            {step2FieldErrors.bySO?.[so.uid]?.global}
-                          </p>
-                        </div>
-                      )}
-
-                      {/* Outcome Rows */}
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-medium text-muted-foreground">Outcomes & Indicators</span>
-                          <Button size="sm" variant="outline" onClick={() => addOutcomeRow(so.uid)} className="h-7 text-xs">
-                            <Plus className="h-3 w-3 mr-1" />Add Outcome
-                          </Button>
-                        </div>
-
-                        {so.outcomeRows.length === 0 && (
-                          <div className="text-center py-6 border border-dashed border-border rounded-lg bg-background">
-                            <TrendingUp className="h-5 w-5 text-muted-foreground/40 mx-auto mb-1" />
-                            <p className="text-xs text-muted-foreground">No outcomes added. Click "Add Outcome" to begin.</p>
-                          </div>
-                        )}
-
-                        {so.outcomeRows.map((row, ri) => {
-                          const usedOutcomeIds = getUsedOutcomeIds(so, row.uid);
-                          const availableOutcomes = getOutcomesForSO(so.name);
-                          const filteredIndicators = row.outcomeId ? getFilteredIndicators(row.outcomeId, so.name) : [];
-
-                          return (
-                            <div key={row.uid} className="border border-border rounded-lg bg-background p-3 space-y-3 ml-4">
-                              {/* Outcome selector */}
-                              <div className="flex items-start gap-2">
-                                <TrendingUp className="h-4 w-4 text-success mt-2 shrink-0" />
-                                <div className="flex-1 space-y-1.5">
-                                  <div className="flex items-center gap-2">
-                                    <Label className="text-xs font-medium">Outcome *</Label>
-                                    {row.outcomeId && <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-mono">{row.outcomeId}</Badge>}
-                                  </div>
-                                  <Popover>
-                                    <PopoverTrigger asChild>
-                                      <Button
-                                        variant="outline"
-                                        role="combobox"
-                                        className={cn(
-                                          "w-full h-auto min-h-[36px] justify-between text-sm font-normal text-left whitespace-normal py-2",
-                                          step2Submitted && step2FieldErrors.bySO?.[so.uid]?.byRow?.[row.uid]?.outcome
-                                            ? "border-destructive ring-1 ring-destructive/40"
-                                            : ""
-                                        )}
-                                      >
-                                        <span className="flex-1 text-left leading-snug">
-                                          {row.outcomeId
-                                            ? (melLiveObjectives?.find(o => o.id === so.name)?.outcomes.find(oc => oc.id === row.outcomeId)?.title
-                                              || OUTCOMES_DATA.find(o => o.id === row.outcomeId)?.label)
-                                            : <span className="text-muted-foreground">Search and select an outcome...</span>}
-                                        </span>
-                                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                      </Button>
-                                    </PopoverTrigger>
-                                    <PopoverContent className="w-[600px] p-0" align="start">
-                                      <Command>
-                                        <CommandInput placeholder="Search outcomes..." />
-                                        <CommandList className="max-h-[300px]">
-                                          <CommandEmpty>No outcome found.</CommandEmpty>
-                                          <CommandGroup>
-                                            {availableOutcomes.map(o => {
-                                              const isUsed = usedOutcomeIds.includes(o.id);
-                                              const isSelected = row.outcomeId === o.id;
-                                              return (
-                                                <CommandItem
-                                                  key={o.id}
-                                                  value={o.label}
-                                                  disabled={isUsed}
-                                                  onSelect={() => {
-                                                    if (!isUsed) setOutcomeForRow(so.uid, row.uid, o.id);
-                                                  }}
-                                                  className="py-3 px-3 cursor-pointer"
-                                                >
-                                                  <div className="flex items-start gap-3 w-full">
-                                                    <div className={`h-4 w-4 rounded border flex items-center justify-center shrink-0 mt-0.5 transition-colors ${
-                                                      isSelected ? 'bg-primary border-primary' : 'border-muted-foreground/30'
-                                                    }`}>
-                                                      {isSelected && <Check className="h-3 w-3 text-primary-foreground" />}
-                                                    </div>
-                                                    <div className="flex-1 min-w-0">
-                                                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono mb-1">{o.id}</Badge>
-                                                      <p className={`text-[13px] leading-snug ${isUsed ? 'text-muted-foreground/50' : 'text-foreground'}`}>
-                                                        {o.label.split(' – ')[1]}
-                                                      </p>
-                                                    </div>
-                                                    {isUsed && <span className="text-[10px] text-muted-foreground/50 shrink-0">Already used</span>}
-                                                  </div>
-                                                </CommandItem>
-                                              );
-                                            })}
-                                          </CommandGroup>
-                                        </CommandList>
-                                      </Command>
-                                    </PopoverContent>
-                                  </Popover>
-                                  {step2Submitted && step2FieldErrors.bySO?.[so.uid]?.byRow?.[row.uid]?.outcome && (
-                                    <p className="text-[12px] text-destructive">
-                                      {step2FieldErrors.bySO?.[so.uid]?.byRow?.[row.uid]?.outcome}
-                                    </p>
-                                  )}
-                                </div>
-                                <button onClick={() => removeOutcomeRow(so.uid, row.uid)} className="text-muted-foreground hover:text-destructive p-1 mt-1 transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
-                              </div>
-
-                              {/* Indicator selector */}
-                              <div className="ml-6 space-y-2">
-                                <div className="flex items-center gap-2">
-                                  <Gauge className="h-3.5 w-3.5 text-info" />
-                                  <Label className="text-xs font-medium">Indicators *</Label>
-                                </div>
-
-                                {!row.outcomeId ? (
-                                  <div className="text-xs text-muted-foreground bg-muted/50 rounded-md p-3 text-center">
-                                    Select an outcome first to view available indicators
-                                  </div>
-                                ) : (
-                                  <div className="space-y-1.5">
-                                    {filteredIndicators.map(ind => {
-                                      const selected = row.indicatorIds.includes(ind.id);
-                                      return (
-                                        <div
-                                          key={ind.id}
-                                          onClick={() => toggleIndicator(so.uid, row.uid, ind.id)}
-                                          className={`flex items-center gap-2 p-2 rounded-md cursor-pointer text-xs transition-all ${
-                                            selected
-                                              ? 'bg-primary/10 border border-primary/30 text-foreground'
-                                              : 'bg-muted/30 border border-transparent hover:bg-muted/60 text-muted-foreground'
-                                          }`}
-                                        >
-                                          <div className={`h-4 w-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
-                                            selected ? 'bg-primary border-primary' : 'border-muted-foreground/30'
-                                          }`}>
-                                            {selected && <Check className="h-3 w-3 text-primary-foreground" />}
-                                          </div>
-                                          <Badge variant="outline" className="text-[9px] px-1 py-0 font-mono shrink-0">{ind.id}</Badge>
-                                          <span className="flex-1">{ind.label.split(' – ')[1]}</span>
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                )}
-
-                                {/* Selected indicator tags */}
-                                {row.indicatorIds.length > 0 && (
-                                  <div className="flex flex-wrap gap-1 pt-1">
-                                    {row.indicatorIds.map(indId => {
-                                      const ind = getFilteredIndicators(row.outcomeId, so.name).find(i => i.id === indId) || INDICATORS_DATA.find(i => i.id === indId);
-                                      return (
-                                        <Badge key={indId} variant="secondary" className="text-[10px] gap-1 pr-1">
-                                          <span className="font-mono">{indId}</span>
-                                          <button onClick={() => removeIndicator(so.uid, row.uid, indId)} className="hover:text-destructive transition-colors"><Trash2 className="h-2.5 w-2.5" /></button>
-                                        </Badge>
-                                      );
-                                    })}
-                                  </div>
-                                )}
-
-                                {step2Submitted && step2FieldErrors.bySO?.[so.uid]?.byRow?.[row.uid]?.indicators && (
-                                  <p className="text-[12px] text-destructive">
-                                    {step2FieldErrors.bySO?.[so.uid]?.byRow?.[row.uid]?.indicators}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+              {dbObjectives.map((obj, idx) => {
+                const isSelected = selectedObjectiveIds.includes(obj.id);
+                const isExpanded = expandedObjectiveIds.includes(obj.id);
+                return (
+                  <div key={obj.id} className={`border rounded-lg overflow-hidden transition-all ${isSelected ? 'border-primary/40 bg-primary/5' : 'border-border'}`}>
+                    <div className="flex items-center gap-3 p-4">
+                      <button
+                        type="button"
+                        onClick={() => toggleObjective(obj.id)}
+                        className={`h-5 w-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
+                          isSelected ? 'bg-primary border-primary' : 'border-muted-foreground/40 hover:border-primary/60'
+                        }`}
+                      >
+                        {isSelected && <Check className="h-3 w-3 text-primary-foreground" />}
+                      </button>
+                      <Target className={`h-4 w-4 shrink-0 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`} />
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono shrink-0">SO {idx + 1}</Badge>
+                      <span
+                        className={`text-[14px] font-medium flex-1 cursor-pointer ${isSelected ? 'text-foreground' : 'text-muted-foreground'}`}
+                        onClick={() => toggleObjective(obj.id)}
+                      >
+                        {obj.title}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => toggleExpand(obj.id)}
+                        className="text-muted-foreground hover:text-foreground p-1 transition-colors"
+                      >
+                        {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                      </button>
                     </div>
-                  )}
-                </div>
-              ))}
+
+                    {isExpanded && (
+                      <div className="border-t border-border bg-secondary/10 px-4 pb-4 pt-3 space-y-2">
+                        {(obj.outcomes ?? []).map(out => (
+                          <div key={out.id} className="ml-4 space-y-1">
+                            <div className="flex items-center gap-2">
+                              <TrendingUp className="h-3.5 w-3.5 text-success shrink-0" />
+                              <span className="text-[13px] text-foreground">{out.title}</span>
+                            </div>
+                            {(out.indicators ?? []).map(ind => (
+                              <div key={ind.id} className="ml-7 flex items-center gap-2">
+                                <Gauge className="h-3 w-3 text-info shrink-0" />
+                                <span className="text-[12px] text-muted-foreground">{ind.name}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
 
-        {/* Step 4: Confirm */}
+        {/* Step 3: Confirm */}
         {step === 2 && (
           <div className="space-y-5">
             <h3 className="section-title">Confirmation Summary</h3>
@@ -1132,27 +755,29 @@ export default function ProjectWizard() {
               </div>
               <div className="bg-secondary/40 rounded-xl p-5 space-y-3">
                 <p className="text-[13px] font-semibold">
-                  Structure: {strategicObjectives.length} Strategic Objective{strategicObjectives.length !== 1 ? 's' : ''} · {strategicObjectives.reduce((s, so) => s + so.outcomeRows.length, 0)} Outcomes · {strategicObjectives.reduce((s, so) => s + so.outcomeRows.reduce((ss, r) => ss + r.indicatorIds.length, 0), 0)} Indicators
+                  {selectedObjectiveIds.length} Strategic Objective{selectedObjectiveIds.length !== 1 ? 's' : ''} selected
                 </p>
-                {strategicObjectives.map((so, i) => (
-                  <div key={so.uid} className="text-[13px] text-muted-foreground space-y-1.5">
-                    <p className="font-medium text-foreground">SO {i + 1}: {melLiveObjectives?.find(o => o.id === so.name)?.title || STRATEGIC_OBJECTIVES_DATA.find(s => s.id === so.name)?.label || so.name}</p>
-                    {so.outcomeRows.map(row => {
-                      const outcomeLive = melLiveObjectives?.find(o => o.id === so.name)?.outcomes.find(oc => oc.id === row.outcomeId) || null;
-                      const outcome = OUTCOMES_DATA.find(o => o.id === row.outcomeId);
-                      return (
-                        <div key={row.uid} className="ml-4 space-y-1">
-                          <p>↳ {outcomeLive?.title || (outcome?.label || row.outcomeId)}</p>
-                          {row.indicatorIds.map(indId => {
-                            const indLive = outcomeLive?.indicators.find(ii => ii.code === indId) || null;
-                            const ind = INDICATORS_DATA.find(ii => ii.id === indId);
-                            return <p key={indId} className="ml-5 text-muted-foreground/80">• {indLive ? `${indLive.code} – ${indLive.title}` : (ind?.label || indId)}</p>;
-                          })}
+                {dbObjectives
+                  .filter(obj => selectedObjectiveIds.includes(obj.id))
+                  .map((obj, i) => (
+                    <div key={obj.id} className="text-[13px] text-muted-foreground space-y-1.5">
+                      <p className="font-medium text-foreground flex items-center gap-2">
+                        <Target className="h-3.5 w-3.5 text-primary shrink-0" />
+                        SO {i + 1}: {obj.title}
+                      </p>
+                      {(obj.outcomes ?? []).map(out => (
+                        <div key={out.id} className="ml-5 space-y-1">
+                          <p className="flex items-center gap-1.5">
+                            <TrendingUp className="h-3 w-3 text-success shrink-0" />
+                            {out.title}
+                          </p>
+                          {(out.indicators ?? []).map(ind => (
+                            <p key={ind.id} className="ml-5 text-muted-foreground/80">• {ind.name}</p>
+                          ))}
                         </div>
-                      );
-                    })}
-                  </div>
-                ))}
+                      ))}
+                    </div>
+                  ))}
               </div>
               <div className="bg-info/6 border border-info/15 rounded-xl p-4 flex items-start gap-3">
                 <AlertCircle className="h-5 w-5 text-info mt-0.5 shrink-0" />
