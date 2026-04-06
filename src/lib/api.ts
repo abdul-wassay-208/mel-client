@@ -234,7 +234,6 @@ export interface ApiObjective {
   id: number;
   title: string;
   description?: string | null;
-  projectId: number;
   outcomes?: ApiOutcome[];
 }
 
@@ -283,6 +282,10 @@ export interface ApiCreateReportPayload {
   periodEnd: string;
 }
 
+export async function apiGetObjectives(): Promise<ApiObjective[]> {
+  return request<ApiObjective[]>("/objectives");
+}
+
 export async function apiGetProjects(): Promise<ApiProject[]> {
   return request<ApiProject[]>("/projects");
 }
@@ -322,18 +325,7 @@ export type ApiCreateProjectPayload = {
   reportingInterval: "MONTHLY" | "QUARTERLY" | "YEARLY" | "monthly" | "quarterly" | "yearly";
   leadId?: number | null; // backward compatible
   leadIds?: number[]; // new multi-lead support
-  objectives?: Array<{
-    name: string;
-    description?: string;
-    outcomes?: Array<{
-      name: string;
-      description?: string;
-      indicators?: Array<{
-        name: string;
-        description?: string;
-      }>;
-    }>;
-  }>;
+  objectiveIds?: number[]; // IDs of global objectives to link
 };
 
 export async function apiCreateProject(payload: ApiCreateProjectPayload): Promise<ApiProject> {

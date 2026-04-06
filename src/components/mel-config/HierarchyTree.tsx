@@ -9,7 +9,8 @@ import { cn } from '@/lib/utils';
 export function HierarchyTree() {
   const {
     objectives, selectedNode, setSelectedNode,
-    addObjective, deleteObjective, addOutcome, deleteOutcome,
+    addObjective,
+    deleteOutcome,
     addIndicator, deleteIndicator,
     updateObjective, updateOutcome, updateIndicator,
   } = useMELConfig();
@@ -104,17 +105,7 @@ export function HierarchyTree() {
                   {obj.title.length > 25 ? obj.title.substring(0, 25) + '…' : obj.title}
                 </span>
               )}
-              <div className="hidden group-hover:flex items-center gap-0.5">
-                <button onClick={(e) => { e.stopPropagation(); startEdit(obj.id, obj.title); }} className="p-0.5 rounded hover:bg-primary/10 transition-colors">
-                  <Pencil className="h-3 w-3 text-muted-foreground" />
-                </button>
-                <button onClick={(e) => { e.stopPropagation(); addOutcome(obj.id); }} className="p-0.5 rounded hover:bg-primary/10 transition-colors">
-                  <Plus className="h-3 w-3 text-primary" />
-                </button>
-                <button onClick={(e) => { e.stopPropagation(); deleteObjective(obj.id); }} className="p-0.5 rounded hover:bg-destructive/10 transition-colors">
-                  <Trash2 className="h-3 w-3 text-destructive" />
-                </button>
-              </div>
+              {/* Objective edit/add/delete buttons temporarily disabled */}
             </div>
 
             {/* Outcomes */}

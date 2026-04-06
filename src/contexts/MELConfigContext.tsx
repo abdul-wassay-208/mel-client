@@ -1,13 +1,8 @@
 import { createContext, useContext, useState, useEffect, useRef, ReactNode, useCallback } from 'react';
-import {
-  STRATEGIC_OBJECTIVES_DATA,
-  OUTCOMES_DATA,
-  INDICATORS_DATA,
-} from '@/config/hierarchyConfig';
 import { INDICATOR_CONFIGS } from '@/config/indicatorFieldMappings';
 import type { IndicatorFieldConfig } from '@/config/indicatorFieldMappings';
 import { toast } from 'sonner';
-import { apiGetConfig, apiSetConfig } from '@/lib/api';
+import { apiGetConfig, apiSetConfig, apiGetObjectives, type ApiObjective } from '@/lib/api';
 
 // ── Types ──
 
@@ -112,13 +107,21 @@ const MELConfigContext = createContext<MELConfigContextType | null>(null);
 let _counter = 100;
 const genId = () => `mel_${++_counter}_${Date.now()}`;
 
-// ── Seed from existing config ──
+// ── Build MELObjective tree from DB response ──
 
-function buildInitialObjectives(): MELObjective[] {
-  return STRATEGIC_OBJECTIVES_DATA.map(so => {
-    const outcomes = OUTCOMES_DATA.filter(o => o.id.startsWith(so.prefix + '.')).map(o => {
-      const indicators = INDICATORS_DATA.filter(i => i.outcomePrefix === o.id).map(ind => {
-        const cfg = INDICATOR_CONFIGS.find(c => c.code === ind.id);
+function buildFromDB(dbObjectives: ApiObjective[]): MELObjective[] {
+  return dbObjectives.map(obj => ({
+    id: String(obj.id),
+    title: obj.title,
+    description: obj.description ?? '',
+    outcomes: (obj.outcomes ?? []).map(out => ({
+      id: String(out.id),
+      title: out.title,
+      description: out.description ?? '',
+      indicators: (out.indicators ?? []).map(ind => {
+        // Indicator name is stored as "1.1.1 – label"; extract code from prefix
+        const code = ind.name.split(' – ')[0]?.trim() ?? '';
+        const cfg = INDICATOR_CONFIGS.find(c => c.code === code);
         const fields: MELField[] = cfg
           ? cfg.fields.map((f: IndicatorFieldConfig) => ({
               id: genId(),
@@ -130,63 +133,70 @@ function buildInitialObjectives(): MELObjective[] {
             }))
           : [];
         return {
-          id: ind.id,
-          code: ind.id,
-          title: ind.label.replace(/^[\d.]+ – /, ''),
+          id: String(ind.id),
+          code,
+          title: ind.name.replace(/^[\d.]+ – /, ''),
           indicatorType: 'count' as const,
           multiRowEnabled: true,
           fields,
         };
-      });
-      return {
-        id: o.id,
-        title: o.label.replace(/^Outcome [\d.]+ – /, ''),
-        description: '',
-        indicators,
-      };
-    });
-    return {
-      id: so.id,
-      title: so.label,
-      description: '',
-      outcomes,
-    };
-  });
+      }),
+    })),
+  }));
+}
+
+function mergeDraftWithDB(dbObjectives: ApiObjective[], draftObjectives: MELObjective[]): MELObjective[] {
+  const fromDB = buildFromDB(dbObjectives);
+  const dbObjectiveIds = new Set(fromDB.map(obj => obj.id));
+  const draftById = new Map(
+    draftObjectives
+      .filter(obj => dbObjectiveIds.has(String(obj.id)))
+      .map(obj => [String(obj.id), obj])
+  );
+
+  return fromDB.map(obj => draftById.get(obj.id) ?? obj);
 }
 
 type MELConfigPayload = { objectives: MELObjective[] };
 
 export function MELConfigProvider({ children }: { children: ReactNode }) {
-  const [objectives, setObjectives] = useState<MELObjective[]>(buildInitialObjectives);
+  const [objectives, setObjectives] = useState<MELObjective[]>([]);
   const [selectedNode, setSelectedNodeRaw] = useState<SelectedNode>(null);
   const [openTabs, setOpenTabs] = useState<TabItem[]>([]);
   const [isDirty, setIsDirty] = useState(false);
   const [savedSnapshot, setSavedSnapshot] = useState<MELObjective[] | null>(null);
   const suppressNextDirty = useRef(false);
 
-  // Load draft on mount (fallback to seeded config)
+  // Load from DB on mount; use saved draft if one exists, otherwise use DB seed data
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const res = await apiGetConfig<MELConfigPayload>('melConfigDraft');
-        const draft = res.value?.objectives;
+        const [dbObjectives, draftRes] = await Promise.all([
+          apiGetObjectives(),
+          apiGetConfig<MELConfigPayload>('melConfigDraft'),
+        ]);
         if (!alive) return;
+
+        const draft = draftRes.value?.objectives;
+        const fromDB = buildFromDB(dbObjectives);
         if (Array.isArray(draft) && draft.length > 0) {
+          const mergedObjectives = mergeDraftWithDB(dbObjectives, draft);
           suppressNextDirty.current = true;
-          setObjectives(draft);
-          setSavedSnapshot(draft);
+          setObjectives(mergedObjectives);
+          setSavedSnapshot(mergedObjectives);
           setIsDirty(false);
         } else {
-          setSavedSnapshot(objectives);
+          suppressNextDirty.current = true;
+          setObjectives(fromDB);
+          setSavedSnapshot(fromDB);
+          setIsDirty(false);
         }
       } catch {
         if (!alive) return;
-        setSavedSnapshot(objectives);
       }
     })();
     return () => { alive = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Helper to get label for a node
